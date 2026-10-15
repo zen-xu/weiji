@@ -120,7 +120,11 @@ extension Archive {
                                     complete: !capped && failures == 0, failures: failures)
         let scan = UUID().uuidString
         try database.transaction {
+            let previous = Dictionary(uniqueKeysWithValues: try database.rows("SELECT id,bytes,modified_at,available FROM discovered_files WHERE root=?", [.text(root.path)]).map { ($0.string("id")!, $0) })
+            let seen = Set(files.map { $0.id })
             for file in files {
+                if let old = previous[file.id], old.int("available") == 1,
+                   old.int("bytes") == file.bytes, old.string("modified_at") == file.modifiedAt { continue }
                 try database.run("""
                     INSERT INTO discovered_files VALUES(?,?,?,?,?,?,?,?,1)
                     ON CONFLICT(id) DO UPDATE SET name=excluded.name,match_name=excluded.match_name,
@@ -129,7 +133,9 @@ extension Archive {
                            .text(file.name.precomposedStringWithCanonicalMapping), .integer(file.bytes), .text(file.modifiedAt), .text(scan)])
             }
             if result.complete {
-                try database.run("UPDATE discovered_files SET available=0 WHERE root=? AND scan<>?", [.text(root.path), .text(scan)])
+                for (id, old) in previous where old.int("available") == 1 && !seen.contains(id) {
+                    try database.run("UPDATE discovered_files SET available=0 WHERE id=?", [.text(id)])
+                }
             }
             var info = try object(result) as! [String: Any]
             info["state"] = result.complete ? "ready" : "partial"

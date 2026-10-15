@@ -76,8 +76,11 @@ struct DirectoryImageCard: View {
             }
         }.padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
             .task(id: (item.preview?.token ?? "") + (item.preview?.state ?? "")) {
-                if let preview = item.preview, let url = try? preview.validFile(paths: model.paths, name: "thumbnail.png") { image = NSImage(contentsOf: url) }
-                else { image = nil }
+                image = nil
+                guard let preview = item.preview else { return }
+                let decoded = await PreviewImageLoader.load(preview, paths: model.paths, name: "thumbnail.png")
+                guard !Task.isCancelled else { return }
+                image = decoded.map { NSImage(cgImage: $0, size: .zero) }
             }
     }
 }

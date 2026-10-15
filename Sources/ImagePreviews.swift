@@ -41,8 +41,11 @@ struct ImagePreview: Codable, Identifiable {
 
 extension Archive {
     func imagePreview(for file: DiscoveredFile) throws -> ImagePreview? {
-        guard hasPreviewCatalog, let bytes = try database.rows("SELECT payload FROM image_previews WHERE file_id=?", [.text(file.id)]).first?.data("payload"),
-              var value = try? JSONDecoder().decode(ImagePreview.self, from: bytes), value.fileID == file.id,
+        guard hasPreviewCatalog else { return nil }
+        return imagePreview(for: file, payload: try database.rows("SELECT payload FROM image_previews WHERE file_id=?", [.text(file.id)]).first?.data("payload"))
+    }
+    func imagePreview(for file: DiscoveredFile, payload: Data?) -> ImagePreview? {
+        guard let payload, var value = try? JSONDecoder().decode(ImagePreview.self, from: payload), value.fileID == file.id,
               value.stamp == ImagePreview.stamp(file) else { return nil }
         if value.state == "ready", (try? value.validFile(paths: paths)) == nil { value.state = "pending" }
         return value
@@ -69,7 +72,7 @@ extension Archive {
             rows = try database.rows("SELECT * FROM image_files WHERE root=? AND available=1 ORDER BY modified_at DESC LIMIT 200", [.text(root)])
         }
         let account = URL(fileURLWithPath: root, isDirectory: true)
-        let keys = ImageKeys.candidates(account: account)
+        var keys: [ImageKey]?
         var ready = 0, unavailable = 0, attempts = 0
         for row in rows {
             let file = DiscoveredFile(id: row.string("id")!, root: root, relativePath: row.string("relative_path")!, name: row.string("name")!,
@@ -80,35 +83,39 @@ extension Archive {
                 if old.state == "unavailable", Date().timeIntervalSince(Dates.parse(old.updatedAt) ?? .distantPast) < 60 { unavailable += 1; continue }
             }
             guard attempts < limit else { continue }; attempts += 1
-            let stamp = ImagePreview.stamp(file)
-            var preview = ImagePreview(fileID: file.id, stamp: stamp, token: digest("image-cache|" + stamp), state: "unavailable")
-            do {
-                guard file.bytes > 0, file.bytes <= ImageDecoder.maxBytes else { throw ImageDecodeError.tooLarge }
-                let url = try file.url()
-                let attributes = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
-                guard attributes.isRegularFile == true, attributes.fileSize == Int(file.bytes),
-                      attributes.contentModificationDate.map(Dates.string) == file.modifiedAt else { throw ImageDecodeError.sourceChanged }
-                let handle = try FileHandle(forReadingFrom: url)
-                let data: Data
-                do { data = try handle.read(upToCount: ImageDecoder.maxBytes + 1) ?? Data(); try handle.close() }
-                catch { try? handle.close(); throw error }
-                guard data.count == file.bytes else { throw ImageDecodeError.sourceChanged }
-                let (payload, _) = try ImageDecoder.payload(data, keys: keys)
-                let image = try ImageDecoder.image(payload)
-                let output = try preview.url(paths: paths)
-                for directory in [ImagePreview.directory(paths: paths), output.deletingLastPathComponent()] {
-                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-                    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            // Release ImageIO/VideoToolbox buffers after each image, rather than after an entire scan batch.
+            try autoreleasepool {
+                let stamp = ImagePreview.stamp(file)
+                var preview = ImagePreview(fileID: file.id, stamp: stamp, token: digest("image-cache|" + stamp), state: "unavailable")
+                do {
+                    guard file.bytes > 0, file.bytes <= ImageDecoder.maxBytes else { throw ImageDecodeError.tooLarge }
+                    let url = try file.url()
+                    let attributes = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
+                    guard attributes.isRegularFile == true, attributes.fileSize == Int(file.bytes),
+                          attributes.contentModificationDate.map(Dates.string) == file.modifiedAt else { throw ImageDecodeError.sourceChanged }
+                    let handle = try FileHandle(forReadingFrom: url)
+                    let data: Data
+                    do { data = try handle.read(upToCount: ImageDecoder.maxBytes + 1) ?? Data(); try handle.close() }
+                    catch { try? handle.close(); throw error }
+                    guard data.count == file.bytes else { throw ImageDecodeError.sourceChanged }
+                    if data.starts(with: [7, 8, 86, 50, 8, 7]), keys == nil { keys = ImageKeys.candidates(account: account) }
+                    let (payload, _) = try ImageDecoder.payload(data, keys: keys ?? [])
+                    let image = try ImageDecoder.image(payload)
+                    let output = try preview.url(paths: paths)
+                    for directory in [ImagePreview.directory(paths: paths), output.deletingLastPathComponent()] {
+                        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+                    }
+                    try ImagePreviewWriter.write(image, to: output, type: "public.png")
+                    try ImagePreviewWriter.write(image, to: preview.url(paths: paths, name: "thumbnail.png"), type: "public.png", maximum: 1024)
+                    try ImagePreviewWriter.write(image, to: preview.url(paths: paths, name: "mcp.jpg"), type: "public.jpeg", maximum: 1280)
+                    preview.state = "ready"; preview.width = image.width; preview.height = image.height; ready += 1
+                } catch {
+                    preview.errorCode = (error as? ImageDecodeError ?? .invalidData).rawValue; unavailable += 1
                 }
-                try ImagePreviewWriter.write(image, to: output, type: "public.png")
-                try ImagePreviewWriter.write(image, to: preview.url(paths: paths, name: "thumbnail.png"), type: "public.png", maximum: 1024)
-                try ImagePreviewWriter.write(image, to: preview.url(paths: paths, name: "mcp.jpg"), type: "public.jpeg", maximum: 1280)
-                preview.state = "ready"; preview.width = image.width; preview.height = image.height; ready += 1
-            } catch {
-                preview.errorCode = (error as? ImageDecodeError ?? .invalidData).rawValue; unavailable += 1
+                try database.run("INSERT INTO image_previews VALUES(?,?) ON CONFLICT(file_id) DO UPDATE SET payload=excluded.payload",
+                                 [.text(file.id), .blob(try jsonData(preview))])
             }
-            try database.run("INSERT INTO image_previews VALUES(?,?) ON CONFLICT(file_id) DO UPDATE SET payload=excluded.payload",
-                             [.text(file.id), .blob(try jsonData(preview))])
         }
         return ["ready": ready, "unavailable": unavailable]
     }

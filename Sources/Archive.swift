@@ -66,6 +66,8 @@ final class Archive {
             """)
         try database.run("CREATE INDEX IF NOT EXISTS image_files_scope_time ON image_files(root,scope,available,modified_at)")
         try database.run("CREATE INDEX IF NOT EXISTS image_files_family ON image_files(root,scope,family,available)")
+        try database.run("CREATE INDEX IF NOT EXISTS image_files_recent ON image_files(root,available,modified_at DESC,id)")
+        try database.run("CREATE INDEX IF NOT EXISTS image_files_gallery ON image_files(root,available,scope,family,substr(relative_path,1,length(relative_path)-length(name)),modified_at DESC,name)")
         hasImageCatalog = true
         try database.run("CREATE TABLE IF NOT EXISTS image_previews(file_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         hasPreviewCatalog = true

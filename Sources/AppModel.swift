@@ -36,23 +36,25 @@ enum DateScope: String, CaseIterable { case all = "全部时间", today = "今�
     @Published var selectedImage: ImagePreview?
     @Published var files: [DiscoveredFile] = []
     @Published var directoryImages: [DirectoryImageGroup] = []
-    @Published var directoryImageSearch = "" { didSet { directoryImageOffset = 0; refreshDirectoryImages() } }
+    @Published var directoryImageSearch = "" { didSet { directoryImageOffset = 0; scheduleDirectoryImageRefresh() } }
     @Published var directoryImageOffset = 0
     @Published var directoryImageTotal = 0
     @Published var directoryImagesLoading = false
     @Published var directoryMonitorStatus = "选择账户目录后自动探测"
     private var directoryImageRevision = 0
+    private var pendingDirectoryImageRefresh: DispatchWorkItem?
     private var directoryMonitor: DirectoryMonitor?
     private var directoryMonitorRevision = 0
     private var directoryTimer: Timer?
     private var scheduledDirectoryScan: DispatchWorkItem?
     private var fileRescanPending = false
-    @Published var fileSearch = "" { didSet { fileOffset = 0; refreshFiles() } }
+    @Published var fileSearch = "" { didSet { fileOffset = 0; scheduleFileRefresh() } }
     @Published var fileOffset = 0
     @Published var fileTotal = 0
     @Published var fileScanBusy = false
     @Published var fileScanStatus = "尚未选择微信文件目录"
     private var fileRevision = 0
+    private var pendingFileRefresh: DispatchWorkItem?
     private var lastFileScanAttempt: Date?
     @Published var stats: ArchiveStats?
     @Published var selectedID: String? { didSet { offset = 0; refresh() } }
@@ -286,7 +288,15 @@ enum DateScope: String, CaseIterable { case all = "全部时间", today = "今�
         scheduledDirectoryScan = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
     }
+    func scheduleDirectoryImageRefresh() {
+        directoryImageRevision += 1
+        pendingDirectoryImageRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshDirectoryImages() }
+        pendingDirectoryImageRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
     func refreshDirectoryImages() {
+        pendingDirectoryImageRefresh?.cancel(); pendingDirectoryImageRefresh = nil
         directoryImageRevision += 1
         let revision = directoryImageRevision, query = directoryImageSearch, offset = directoryImageOffset
         directoryImagesLoading = true
@@ -317,7 +327,15 @@ enum DateScope: String, CaseIterable { case all = "全部时间", today = "今�
         }
     }
     func paginateDirectoryImages(_ direction: Int) { directoryImageOffset = max(0, directoryImageOffset + direction * 60); refreshDirectoryImages() }
+    func scheduleFileRefresh() {
+        fileRevision += 1
+        pendingFileRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshFiles() }
+        pendingFileRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
     func refreshFiles() {
+        pendingFileRefresh?.cancel(); pendingFileRefresh = nil
         fileRevision += 1
         let revision = fileRevision, query = fileSearch, offset = fileOffset
         worker.perform({ (try $0.discoveredFiles(query: query, limit: 100, offset: offset), try $0.discoveredFileCount(query: query), try $0.fileScanInfo()) }) { [weak self] result in

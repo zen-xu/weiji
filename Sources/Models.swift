@@ -7,24 +7,32 @@ struct ListenerError: Error, LocalizedError {
     var errorDescription: String? { message }
 }
 
-func digest(_ value: String) -> String {
-    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+private let hexDigits = Array("0123456789abcdef".utf8)
+private func hexString<S: Sequence>(_ bytes: S) -> String where S.Element == UInt8 {
+    String(decoding: bytes.flatMap { [hexDigits[Int($0 >> 4)], hexDigits[Int($0 & 15)]] }, as: UTF8.self)
 }
 
+func digest(_ value: String) -> String { hexString(SHA256.hash(data: Data(value.utf8))) }
+
 func mediaDirectoryID(_ chat: String) -> String {
-    Insecure.MD5.hash(data: Data(chat.utf8)).map { String(format: "%02x", $0) }.joined()
+    hexString(Insecure.MD5.hash(data: Data(chat.utf8)))
 }
 
 enum Dates {
-    static func string(_ date: Date) -> String {
+    // Each library queue owns its thread's formatters; never share mutable formatters across readers and writers.
+    private static func formatter(fractional: Bool) -> ISO8601DateFormatter {
+        let key = fractional ? "local.wechat-listener.iso.fractional" : "local.wechat-listener.iso.seconds"
+        if let cached = Thread.current.threadDictionary[key] as? ISO8601DateFormatter { return cached }
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        formatter.formatOptions = fractional ? [.withInternetDateTime, .withFractionalSeconds] : [.withInternetDateTime]
+        Thread.current.threadDictionary[key] = formatter
+        return formatter
+    }
+    static func string(_ date: Date) -> String {
+        formatter(fractional: true).string(from: date)
     }
     static func parse(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        formatter(fractional: true).date(from: value) ?? formatter(fractional: false).date(from: value)
     }
     static func day(_ value: String, end: Bool = false) throws -> String {
         let formatter = DateFormatter()

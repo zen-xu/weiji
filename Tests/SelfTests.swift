@@ -148,5 +148,6 @@ func runSelfTests() throws {
     passed += try runImagePreviewTests(directory: directory, date: date)
     passed += try runDirectoryImageCandidateTests(directory: directory, date: date)
     passed += try runDirectoryImageGalleryTests(directory: directory, date: date)
+    passed += try runPerformanceRegressionTests(directory: directory, date: date)
     print("PASS: \(passed) checks; all fixtures synthetic; no network or real notifications accessed")
 }

@@ -1,5 +1,39 @@
 import SwiftUI
 import AppKit
+import ImageIO
+
+/// Read and decompress cached previews away from SwiftUI's main actor. The cache has a fixed memory budget.
+enum PreviewImageLoader {
+    private static let queue = DispatchQueue(label: "local.wechat-listener.preview-display", qos: .userInitiated)
+    private static let cache: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
+        cache.totalCostLimit = 32 * 1024 * 1024
+        cache.countLimit = 128
+        return cache
+    }()
+    static func load(_ preview: ImagePreview, paths: AppPaths, name: String = "image.png") async -> CGImage? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                let image: CGImage? = autoreleasepool {
+                    // Validate even on cache hits so a deleted or replaced cache path is never trusted.
+                    guard let url = try? preview.validFile(paths: paths, name: name) else { return nil }
+                    let key = url.path as NSString
+                    if let cached = cache.object(forKey: key) { return cached }
+                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                          let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+                          let height = properties[kCGImagePropertyPixelHeight as String] as? Int,
+                          width > 0, height > 0, width <= 4096, height <= 4096,
+                          let decoded = CGImageSourceCreateImageAtIndex(source, 0,
+                            [kCGImageSourceShouldCache: true, kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
+                    cache.setObject(decoded, forKey: key, cost: decoded.bytesPerRow * decoded.height)
+                    return decoded
+                }
+                continuation.resume(returning: image)
+            }
+        }
+    }
+}
 
 struct ImageAssociationCard: View {
     let group: ImageAssociationGroup
@@ -53,8 +87,11 @@ struct ImageAssociationCard: View {
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(green.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
             .task(id: (item.preview?.token ?? "") + (item.preview?.state ?? "")) {
-                guard let preview = item.preview, let url = try? preview.validFile(paths: model.paths, name: "thumbnail.png") else { thumbnail = nil; return }
-                thumbnail = NSImage(contentsOf: url)
+                thumbnail = nil
+                guard let preview = item.preview else { return }
+                let decoded = await PreviewImageLoader.load(preview, paths: model.paths, name: "thumbnail.png")
+                guard !Task.isCancelled else { return }
+                thumbnail = decoded.map { NSImage(cgImage: $0, size: .zero) }
             }
     }
 }
@@ -109,6 +146,11 @@ struct ImagePreviewSheet: View {
                 }.disabled(image == nil)
             }.padding(16)
         }.frame(minWidth: 760, idealWidth: 960, minHeight: 540, idealHeight: 740)
-            .task(id: preview.token) { if let url = try? preview.validFile(paths: paths) { image = NSImage(contentsOf: url) } }
+            .task(id: preview.token) {
+                image = nil
+                let decoded = await PreviewImageLoader.load(preview, paths: paths)
+                guard !Task.isCancelled else { return }
+                image = decoded.map { NSImage(cgImage: $0, size: .zero) }
+            }
     }
 }

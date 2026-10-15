@@ -145,6 +145,7 @@ extension Archive {
         var indexed = [(DiscoveredFile, String, String)](), failures = 0, entries = 0, capped = messages.capped
         try database.run("INSERT INTO metadata VALUES('image_root',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [.text(account.path)])
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        let previous = Dictionary(uniqueKeysWithValues: try database.rows("SELECT id,bytes,modified_at,format,available FROM image_files WHERE root=?", [.text(account.path)]).map { ($0.string("id")!, $0) })
         var scopes = Set(byScope.keys)
         if let folders = try? FileManager.default.contentsOfDirectory(at: attach, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) {
             for folder in folders where ImageAssociations.validScope(folder.lastPathComponent) {
@@ -180,7 +181,11 @@ extension Archive {
                 } catch { failures += 1 }
             }
             for file in discovered {
-                if let url = try? file.url() { indexed.append((file, scope, ImageAssociations.format(url))) }
+                if let old = previous[file.id], old.int("bytes") == file.bytes,
+                   old.string("modified_at") == file.modifiedAt, let format = old.string("format"), format != "unreadable" {
+                    indexed.append((file, scope, format))
+                }
+                else if let url = try? file.url() { indexed.append((file, scope, ImageAssociations.format(url))) }
                 else { failures += 1 }
             }
             if entries > entryLimit { break }
@@ -189,7 +194,10 @@ extension Archive {
             messages: eligible.filter { $0.isImageNotification }.count, failures: failures, complete: !capped && failures == 0, scannedAt: Dates.string(Date()))
         result.anchorNotifications = eligible.count
         try database.transaction {
+            let seen = Set(indexed.map { $0.0.id })
             for (file, scope, format) in indexed {
+                if let old = previous[file.id], old.int("available") == 1, old.int("bytes") == file.bytes,
+                   old.string("modified_at") == file.modifiedAt, old.string("format") == format { continue }
                 try database.run("""
                     INSERT INTO image_files VALUES(?,?,?,?,?,?,?,?,?,?,1)
                     ON CONFLICT(id) DO UPDATE SET bytes=excluded.bytes,modified_at=excluded.modified_at,
@@ -198,7 +206,9 @@ extension Archive {
                            .integer(file.bytes), .text(file.modifiedAt), .text(format), .text(ImageAssociations.family(file.name)), .text(stamp)])
             }
             if result.complete {
-                try database.run("UPDATE image_files SET available=0 WHERE root=? AND scan<>?", [.text(account.path), .text(stamp)])
+                for (id, old) in previous where old.int("available") == 1 && !seen.contains(id) {
+                    try database.run("UPDATE image_files SET available=0 WHERE id=?", [.text(id)])
+                }
             }
             try saveImageScan(result)
         }
