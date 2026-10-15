@@ -56,3 +56,5 @@ CODE_SIGN_IDENTITY=- bash build.sh
 签名迁移首次启动时，GUI 运行状态为 `blocked`，需要用户手动重新添加完全磁盘访问授权并重开 App。当前已验证签名身份跨代码更新稳定，尚未实测完成首次授权后的 TCC 跨实际升级保留，不能把 DR 测试通过当成已验证 TCC 保留。
 
 SwiftPM 工程化后，release App 仍满足上述同一证书和 Bundle ID 的身份规则，已与安装版双向验证。该次重构仅生成 `dist` 产物，未替换安装版；生产二进制中不再包含测试入口或测试框架。
+
+HTTP MCP 版本 1.5.0（build 10）继续使用同一证书和 Bundle ID，安装前后固定身份要求及严格校验通过。旧 1.4.3 应用备份于 `Backups/微信消息监听-before-http-1.4.3.app`，新版已更新到 `/Applications` 并验证自动提供本机 HTTP 服务。此验证不等同于完成此前待验证的完全磁盘访问授权保留实测。

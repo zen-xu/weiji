@@ -14,6 +14,7 @@ let package = Package(
             dependencies: ["CSQLite"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("Network"),
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("CryptoKit"),
                 .linkedFramework("VideoToolbox"),

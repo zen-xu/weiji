@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Black-box MCP and CLI verification. Uses synthetic fixtures only; no network."""
+"""Black-box MCP and CLI verification; synthetic fixtures, stdio or loopback HTTP."""
 import json
+import atexit
 import base64
 import hashlib
 import datetime
@@ -12,6 +13,9 @@ import sys
 import tempfile
 
 binary = pathlib.Path(sys.argv[1]).resolve()
+http_mode = "--http" in sys.argv[2:]
+if http_mode:
+    from mcp_http_client import HTTPClient
 with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
     root = pathlib.Path(directory)
     untouched = root / "cli-metadata-must-not-create-an-archive"
@@ -26,17 +30,33 @@ with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
     assert retired.returncode != 0 and "Scripts/test.sh" in json.loads(retired.stdout)["error"]
     assert not untouched.exists(), "Metadata and retired self-test commands must not create an archive"
     data_dir = root / "archive"
-    process = subprocess.Popen([str(binary), "mcp", "--data-dir", str(data_dir)],
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, encoding="utf-8")
+    if http_mode:
+        client = HTTPClient(binary, data_dir)
+        process = client.process
+        atexit.register(client.close)
+    else:
+        process = subprocess.Popen([str(binary), "mcp", "--data-dir", str(data_dir)],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding="utf-8")
+        atexit.register(lambda: process.terminate() if process.poll() is None else None)
     def send(value):
+        if http_mode:
+            code, _, body = client.request(value)
+            assert code == 202 and body == b"", (code, body)
+            return
         process.stdin.write(json.dumps(value, ensure_ascii=False) + "\n")
         process.stdin.flush()
     def call(number, method, params=None):
-        send({"jsonrpc": "2.0", "id": number, "method": method, "params": params or {}})
-        line = process.stdout.readline()
-        assert line, "Server exited before responding"
-        response = json.loads(line)
+        value = {"jsonrpc": "2.0", "id": number, "method": method, "params": params or {}}
+        if http_mode:
+            code, headers, body = client.request(value)
+            assert code == 200 and headers["Content-Type"] == "application/json", (code, body)
+            response = json.loads(body)
+        else:
+            send(value)
+            line = process.stdout.readline()
+            assert line, "Server exited before responding"
+            response = json.loads(line)
         assert response["id"] == number, response
         return response
     assert call(1, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
@@ -166,10 +186,15 @@ with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
     assert candidate["sender_verified"] is False and candidate["notification_anchor_kind"] == "nearby_conversation_notification"
     observed_image = call(19, "tools/call", {"name": "wechat_get_image", "arguments": {"message_id": observed["id"], "file_id": candidate["id"]}})["result"]
     assert observed_image["isError"] is False and observed_image["content"][1]["type"] == "image"
-    process.stdin.close()
-    assert process.wait(timeout=5) == 0
-    assert process.stdout.read() == "", "stdout must contain MCP JSON-RPC only"
-    assert process.stderr.read() == "", "No message bodies or diagnostics should leak to stderr"
+    if http_mode:
+        client.close()
+        assert process.stdout.read() == ""
+        assert process.stderr.read() == f"MCP listening at {client.url}\n"
+    else:
+        process.stdin.close()
+        assert process.wait(timeout=5) == 0
+        assert process.stdout.read() == "", "stdout must contain MCP JSON-RPC only"
+        assert process.stderr.read() == "", "No message bodies or diagnostics should leak to stderr"
     read_status = subprocess.run([str(binary), "status", "--data-dir", str(data_dir)], check=True, capture_output=True, text=True)
     assert json.loads(read_status.stdout)["archive"]["messages"] == 5
-print("PASS: real stdio MCP handshake, version negotiation, notifications, six tools, presentation, decoded image cache and actual image content, later asset-family variants, directory observations without image notifications, filename discovery via CLI, file metadata search without contents, no arbitrary scan requests, legacy attachment metadata ignored, pagination, context, invalid arguments, read-only startup, CLI import, clean EOF")
+print("PASS: real " + ("HTTP" if http_mode else "stdio") + " MCP handshake, version negotiation, notifications, six tools, presentation, decoded image cache and actual image content, later asset-family variants, directory observations without image notifications, filename discovery via CLI, file metadata search without contents, no arbitrary scan requests, legacy attachment metadata ignored, pagination, context, invalid arguments, read-only startup, CLI import, clean EOF")

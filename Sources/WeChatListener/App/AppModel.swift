@@ -96,6 +96,10 @@ import UniformTypeIdentifiers
     private var timer: Timer?
     private var revision = 0
     private var pendingRefresh: DispatchWorkItem?
+    @Published var mcpStatus = "服务尚未启动"
+    @Published var mcpListening = false
+    @Published var mcpPortText = String(MCPHTTPServer.defaultPort)
+    private lazy var mcpServer = MCPHTTPServer(paths: paths)
     var onStatusChange: (() -> Void)?
     let pageSize = 100
 
@@ -105,6 +109,7 @@ import UniformTypeIdentifiers
         worker = LibraryWorker(paths: paths)
         imageReader = LibraryWorker(paths: paths, readOnly: true)
         preferences = Preferences.load(paths)
+        mcpPortText = String(preferences.mcpPort ?? MCPHTTPServer.defaultPort)
     }
     var selected: Conversation? { conversations.first { $0.id == selectedID } }
     var filter: MessageFilter {
@@ -122,6 +127,7 @@ import UniformTypeIdentifiers
         return result
     }
     func startUp() {
+        startMCPServer()
         refresh()
         refreshFiles()
         startDirectoryMonitoring()
@@ -474,12 +480,46 @@ import UniformTypeIdentifiers
             }
         } catch { errorText = error.localizedDescription }
     }
-    var mcpCommand: String {
-        let executable = Bundle.main.executableURL?.path ?? "WeChatListener"
-        func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'" }
-        var command = "codex mcp add wechat-listener -- " + quote(executable) + " mcp"
-        if paths.root.path != AppPaths().root.path { command += " --data-dir " + quote(paths.root.path) }
-        return command
+    var mcpURL: String { "http://127.0.0.1:\(preferences.mcpPort ?? MCPHTTPServer.defaultPort)/mcp" }
+    var mcpCommand: String { "codex mcp add wechat-listener --url \(mcpURL)" }
+    var mcpConfiguration: String { "[mcp_servers.wechat-listener]\nurl = \"\(mcpURL)\"" }
+
+    func startMCPServer() {
+        let port = preferences.mcpPort ?? MCPHTTPServer.defaultPort
+        mcpServer.start(port: port) { [weak self] state in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch state {
+                case .starting:
+                    self.mcpListening = false
+                    self.mcpStatus = "正在启动本地服务…"
+                case .listening(let port):
+                    self.mcpListening = true
+                    self.mcpStatus = "运行中 · 127.0.0.1:\(port)"
+                case .stopped:
+                    self.mcpListening = false
+                    self.mcpStatus = "服务已停止"
+                case .failed(let message):
+                    self.mcpListening = false
+                    self.mcpStatus = "启动失败：\(message)。请检查端口是否被占用，或修改端口重试。"
+                }
+            }
+        }
+    }
+    func stopMCPServer() { mcpServer.stop() }
+    func applyMCPPort() {
+        guard let port = UInt16(mcpPortText.trimmingCharacters(in: .whitespacesAndNewlines)), port > 0 else {
+            feedback = "端口必须是 1…65535 的整数"
+            return
+        }
+        do {
+            var updated = preferences
+            updated.mcpPort = port
+            try updated.save(paths)
+            preferences = updated
+            mcpPortText = String(port)
+            startMCPServer()
+        } catch { errorText = error.localizedDescription }
     }
     func importArchive() {
         let panel = NSOpenPanel()

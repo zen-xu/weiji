@@ -4,6 +4,7 @@ struct Preferences: Codable {
     var collectOnLaunch = false
     var pollSeconds = 2
     var fileDirectory: String?
+    var mcpPort: UInt16?
     static func load(_ paths: AppPaths) -> Preferences {
         (try? JSONDecoder().decode(Self.self, from: Data(contentsOf: paths.preferences))) ?? Self()
     }

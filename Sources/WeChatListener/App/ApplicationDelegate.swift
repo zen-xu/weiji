@@ -91,6 +91,7 @@ import SwiftUI
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         model.stop()
         model.stopDirectoryMonitoring()
+        model.stopMCPServer()
         model.worker.perform {
             try $0.flushJournal()
         } completion: { _ in

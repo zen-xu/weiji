@@ -1,6 +1,6 @@
 # 微信消息监听
 
-原生 macOS 通知档案应用，同时提供供 Codex 接入的 **MCP stdio 服务**。Swift + SwiftUI + 系统 SQLite，没有第三方运行时依赖，没有网络请求，也不需要关闭 SIP、调试微信或获取微信数据库密钥。
+原生 macOS 通知档案应用，同时提供供 Codex 接入的 **本地 HTTP MCP 服务**。Swift + SwiftUI + 系统 SQLite，没有第三方运行时依赖，不向远端发送网络请求，也不需要关闭 SIP、调试微信或获取微信数据库密钥。
 
 这是通知档案和本地目录图片索引，不是完整聊天数据库。通知内容可能隐藏、合并或截断；免打扰、前台会话、应用退出/休眠期间和自己发送的消息可能没有通知。没有搜索结果不等于没有发生。
 
@@ -59,15 +59,32 @@
 
 ## Codex MCP 接入
 
-在应用的“连接 Codex”页面复制命令并运行一次。命令类似：
+应用启动后自动提供 Streamable HTTP MCP 服务，默认地址：
 
-```bash
-codex mcp add wechat-listener -- '/你的路径/微信消息监听.app/Contents/MacOS/WeChatListener' mcp
+```text
+http://127.0.0.1:18765/mcp
 ```
 
-然后让 Codex 重新加载 MCP 配置；必要时重新打开 Codex。将应用移动到其他目录后，需要更新该命令路径。Codex CLI 的接入方式已按[官方 MCP 文档](https://learn.chatgpt.com/docs/extend/mcp)及本机 `codex mcp add --help` 核对。
+在 Codex 的 MCP 设置中选择 **Streamable HTTP**，填入该地址并保存。应用的“连接 Codex”页面可复制地址、查看状态、停止/启动服务或修改端口。应用关闭窗口后仍在菜单栏提供服务；退出应用后服务停止。暂停通知采集不影响 MCP 查询。
 
-MCP 使用 stdio，由客户端按需启动，不监听任何 TCP 端口。服务进程只用 `SQLITE_OPEN_READONLY` 访问应用自己的档案，不读取系统通知数据库。应用关闭时仍可查询历史，但新通知需要采集应用持续运行。
+也可手动配置：
+
+```toml
+[mcp_servers.wechat-listener]
+url = "http://127.0.0.1:18765/mcp"
+```
+
+或使用 CLI：
+
+```bash
+codex mcp add wechat-listener --url http://127.0.0.1:18765/mcp
+```
+
+已有同名 stdio 配置时，在 Codex 设置中将其替换为 HTTP 地址；更改端口后同步更新客户端配置。按[官方 MCP 文档](https://learn.chatgpt.com/docs/extend/mcp)重新加载服务配置。应用移动或升级不改变 URL。
+
+服务只绑定 IPv4 回环地址 `127.0.0.1`，不开放局域网访问；校验 Host，拒绝带 Origin 的浏览器请求。默认无需 Token，同一台 Mac 上的其他程序也能访问此只读服务。请求体最多 1 MiB，头部最多 16 KiB，最多 32 个连接，连接超时 15 秒；使用无会话的 JSON 响应，不提供 SSE 推送。档案仅以 `SQLITE_OPEN_READONLY` 查询，MCP 不读取系统通知数据库。
+
+需要独立运行服务时可用 `WeChatListener mcp-http --port 18765`；旧的 `WeChatListener mcp` stdio 接口仍可用。两种接口提供相同的只读工具。
 
 提供六个工具：
 
@@ -162,7 +179,7 @@ python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微信消息监听.app/Cont
 python3 -B Tests/Integration/test_signing_identity.py
 ```
 
-`build.sh` 使用 SwiftPM 的 release 产品生成 `.app`，复用固定签名身份并严格校验；`check.sh` 独立检查格式、Swift Testing、签名配置和真实 MCP stdio 进程。当前 Swift 测试保留原有 164 项合成断言，不读取真实通知或访问网络。图片文件保护的读取验证需要 Mac 处于解锁状态。应用运行没有 Python 或第三方运行时依赖。
+`build.sh` 使用 SwiftPM 的 release 产品生成 `.app`，复用固定签名身份并严格校验；`check.sh` 独立检查格式、Swift Testing、签名配置以及真实 stdio / HTTP MCP 进程。Swift 测试保留原有 164 项合成断言并新增 HTTP 检查，不读取真实通知；网络测试仅连接本机回环地址。图片文件保护的读取验证需要 Mac 处于解锁状态。应用运行没有 Python 或第三方运行时依赖。
 
 默认从忽略的 `.local-signing/identity.json` 读取已固定的证书指纹，配置缺失或证书不可用时打包会停止。也可通过 `CODE_SIGN_IDENTITY` 和可选的 `CODE_SIGN_KEYCHAIN` 选择已有身份。本机自签名身份不等于 Developer ID 或 Apple 公证。配置和验证边界见 [签名说明](Documentation/Signing.md)。
 

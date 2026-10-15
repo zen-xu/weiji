@@ -32,6 +32,21 @@ enum CommandLineInterface {
         }
         switch command {
         case "mcp": MCPServer(paths: paths).run()
+        case "mcp-http":
+            let raw = try option("--port") ?? String(MCPHTTPServer.defaultPort)
+            guard let port = UInt16(raw), port > 0 else { throw ListenerError("端口必须是 1…65535 的整数。") }
+            let server = MCPHTTPServer(paths: paths)
+            server.start(port: port) { state in
+                switch state {
+                case .listening(let port):
+                    fputs("MCP listening at http://127.0.0.1:\(port)/mcp\n", stderr)
+                case .failed(let message):
+                    fputs("MCP HTTP: \(message)\n", stderr)
+                    exit(1)
+                default: break
+                }
+            }
+            withExtendedLifetime(server) { dispatchMain() }
         case "status": try writeJSON(service.status())
         case "conversations":
             var values = try queryArguments()
@@ -87,7 +102,9 @@ enum CommandLineInterface {
             print(
                 """
                 微信消息监听 \(ApplicationInfo.version)
-                无参数：打开应用；mcp：MCP stdio 服务（只读本地档案）
+                无参数：打开应用，自动提供本地 HTTP MCP 服务
+                mcp-http [--port 18765]：独立运行本地 HTTP MCP 服务（只读本地档案）
+                mcp：兼容旧版 MCP stdio 接入
                 status | conversations [--query 名称] | search [--query 关键词] [--conversation ID]
                 search 还支持 --from YYYY-MM-DD --to YYYY-MM-DD --limit 1..200 --offset N
                 context --message ID [--radius 0..20]

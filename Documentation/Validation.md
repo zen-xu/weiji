@@ -1,6 +1,16 @@
 # 本机验证记录
 
-日期：2026-10-15（Asia/Shanghai）。版本 1.4.3（build 9），Apple Silicon，Swift 6.2.3，macOS 14+。
+日期：2026-10-15（Asia/Shanghai）。当前构建版本 1.5.0（build 10），Apple Silicon，Swift 6.2.3，macOS 14+。
+
+## 自动提供 HTTP MCP 服务
+
+- 应用启动时自动监听 `http://127.0.0.1:18765/mcp`，端口可保存；暂停通知采集不影响服务。停止/重启服务、端口状态和 URL 配置入口位于“连接 Codex”。旧 stdio 入口仍保留。
+- 4 组新增 Swift 测试通过：HTTP 分段解析/边界/歧义报文、MCP 版本协商/只读查询/Origin 与 Host 检查、旧 Preferences 兼容，以及真实监听器同端口停止/重启/再次应用。
+- Python 真实 TCP 检查通过：六个工具发现、202 空通知响应、无档案启动不创建目录、40 次并发请求、分段报文、重复长度/超大请求拒绝、端口占用明确失败、退出释放端口及重启。
+- 使用独立合成档案启动原生演示界面，未单独运行 `mcp-http`，HTTP 服务自动可连接并可查询状态。未读取真实通知、未修改已安装应用或 Codex 配置。
+- 本机已安装 Codex 的 app-server 客户端实测：仅临时覆盖该测试进程的 MCP 配置，使用 URL 直接发现全部六个工具；无 Token，无额外进程启动命令，未发起模型请求。
+- 最终 1.5.0（build 10）release 产物严格签名及固定身份要求检查通过；产物的真实 TCP 检查和 Codex HTTP 工具发现通过。已备份 1.4.3 至 `Backups/微信消息监听-before-http-1.4.3.app`，更新并启动 `/Applications/微信消息监听.app`；默认端口实测返回 HTTP 200，MCP serverInfo 为 1.5.0。Codex 持久配置未修改。
+- 完整 Swift 测试中，现有的通知/档案、文件发现、图片关联、目录候选及新增 HTTP 检查通过；原有 3 组受保护图片读取仍因 Mac 锁屏失败。完整 HTTP MCP 场景也在读取合成图片缓存时受阻，待解锁后运行 `bash Scripts/check.sh` 补全 stdio / HTTP 的图片内容验证。保留原有文件保护。
 
 ## SwiftPM 工程化验证
 

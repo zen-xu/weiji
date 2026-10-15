@@ -16,7 +16,7 @@ Sources/
       Messages/                   消息展示与档案页面
       Files/                      普通文件发现、索引与页面
       Images/                     图片发现、关联、解码、缓存与页面
-      MCP/                        只读查询服务、协议与接入页面
+      MCP/                        只读查询服务、stdio / HTTP 传输与接入页面
     Models/                       档案值类型
     Persistence/                  SQLite 封装和档案持久化
     Services/                     后台档案队列和目录监听
@@ -45,7 +45,7 @@ swift run WeChatListener --demo --data-dir /tmp/wechat-listener-dev
 bash Scripts/check.sh
 ```
 
-`check.sh` 检查 Swift 格式，运行 Swift Testing、签名配置检查和真实 MCP stdio 进程检查。测试仅使用自动清理的临时目录与合成通知/文件，不需要本机签名证书或完全磁盘访问权限。图片缓存保留原有文件保护设置，相关读取测试要求 Mac 处于解锁状态。
+`check.sh` 检查 Swift 格式，运行 Swift Testing、签名配置检查和真实 stdio / HTTP MCP 进程检查。测试仅使用自动清理的临时目录与合成通知/文件，不需要本机签名证书或完全磁盘访问权限；HTTP 检查仅访问本机回环端口。图片缓存保留原有文件保护设置，相关读取测试要求 Mac 处于解锁状态。
 
 SwiftPM 的裸可执行文件没有 App Bundle 元数据，开发时版本显示为 `development`。打包后，界面、帮助和 MCP 版本统一读取 Bundle 的 `CFBundleShortVersionString`，版本号只在 `Resources/Info.plist` 维护。
 
@@ -60,6 +60,15 @@ WECHAT_RUN_BENCHMARKS=1 bash Scripts/test.sh -c release --filter catalogPerforma
 在完整 Xcode 工具链下也可以直接使用 `swift test --disable-xctest`。当前 Command Line Tools 虽包含 Swift Testing，却缺少自动框架搜索路径和可选 Foundation overlay 的 Swift 模块；`test.sh` 为该工具链添加测试专用的框架路径与 overlay 兼容参数，不下载第三方框架、不修改工具链文件。正式 `swift build` 和 App 打包不使用这些测试兼容参数。
 
 性能基准默认跳过，避免日常测试生成一万张合成文件。设置环境变量后才执行，测量边界见 [Performance.md](Performance.md)。
+
+HTTP 实现使用系统 `Network.framework`，无第三方 HTTP 运行时依赖。`MCPHTTPRequest` / `MCPHTTPHandler` 负责有界 HTTP 报文及协议检查，`MCPHTTPServer` 在独立串行队列管理监听器和连接；应用启动时自动开启，退出时停止，端口保存在现有 Preferences 中。`mcp-http --port N --data-dir 目录` 可独立验证服务。修改传输时执行：
+
+```bash
+python3 -B Tests/Integration/test_mcp_http.py .build/debug/WeChatListener
+python3 -B Tests/Integration/test_mcp_stdio.py .build/debug/WeChatListener --http
+# 可选：启动合成演示界面，确认 GUI 启动即提供服务
+python3 -B Tests/Integration/test_mcp_http.py .build/debug/WeChatListener --gui
+```
 
 原来的 App `--self-test` 入口已迁移到独立测试目标；该参数现在给出迁移提示，不会运行测试或创建档案。
 

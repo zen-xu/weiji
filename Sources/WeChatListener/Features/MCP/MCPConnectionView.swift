@@ -9,16 +9,37 @@ struct MCPConnectionView: View {
                 SectionCard {
                     Label("让 Codex 按需查询微信通知", systemImage: "point.3.connected.trianglepath.dotted").font(
                         .title3.weight(.semibold))
-                    Text("MCP 服务与应用一起提供。Codex 按需启动它，直接读取本机档案；无需额外的 API Key，也不开放网络端口。").foregroundStyle(.secondary)
-                        .lineSpacing(5)
-                    Text(model.mcpCommand).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(
-                        14
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading).background(
-                        Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                    Button("复制 Codex 接入命令") { model.copy(model.mcpCommand) }.buttonStyle(.borderedProminent)
-                    Text("在终端运行一次，然后让 Codex 重新加载 MCP 配置。应用不在运行时，历史档案仍可查询；采集新通知需要保持应用运行。").font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("打开应用后，MCP 服务会自动启动。Codex 通过下面的本地地址连接，关闭窗口后服务仍在菜单栏运行，退出应用后停止。")
+                        .foregroundStyle(.secondary).lineSpacing(5)
+                    Label(model.mcpStatus, systemImage: model.mcpListening ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(model.mcpListening ? AppTheme.accentColor : .secondary)
+                    Text(model.mcpURL).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                    HStack {
+                        Button("复制服务地址") { model.copy(model.mcpURL) }.buttonStyle(.borderedProminent)
+                            .disabled(!model.mcpListening)
+                        if model.mcpListening {
+                            Button("停止服务") { model.stopMCPServer() }
+                        } else {
+                            Button("启动服务") { model.startMCPServer() }
+                        }
+                    }
+                    HStack {
+                        Text("本地端口")
+                        TextField("18765", text: $model.mcpPortText).textFieldStyle(.roundedBorder).frame(width: 100)
+                        Button("应用并重启") { model.applyMCPPort() }
+                    }
+                    Divider().padding(.vertical, 5)
+                    Text("在 Codex 的 MCP 设置中选择 Streamable HTTP，填入上面的服务地址并保存。已有同名 stdio 配置时，将其替换为这个地址。")
+                        .foregroundStyle(.secondary).lineSpacing(5)
+                    Text(model.mcpConfiguration).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    HStack {
+                        Button("复制配置") { model.copy(model.mcpConfiguration) }
+                        Button("复制 CLI 接入命令") { model.copy(model.mcpCommand) }
+                    }
+                    Text("仅监听本机 127.0.0.1，不提供局域网访问。无需 Token；本机其他程序也能连接此地址。更改端口后需同步更新 Codex 的地址。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 SectionCard {
                     Text("六个只读工具").font(.headline)
