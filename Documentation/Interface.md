@@ -2,6 +2,8 @@
 
 界面优先使用系统控件、系统字体和用户的强调色。主任务是查看已归档通知和本机文件，默认页面应把空间留给内容。工具栏取舍参考 [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/toolbars)。
 
+应用中文名为“微迹”。窗口、菜单、关于面板、设置、启动引导和命令行帮助统一使用 `ApplicationInfo.name`；Bundle 显示名称与打包文件名保持一致。已有数据、签名身份及 MCP 接入标识继续沿用。
+
 ## 导航与操作
 
 - 主窗口使用 `NavigationSplitView` 和原生 sidebar `List`。资料库、工具、会话分组展示；移除重复的应用标志、标语、会话头像底块和预览文字。

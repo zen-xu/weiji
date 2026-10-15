@@ -1,12 +1,14 @@
-# 微信消息监听
+# 微迹
 
-原生 macOS 通知档案应用，同时提供供 Codex 接入的 **本地 HTTP MCP 服务**。Swift + SwiftUI + 系统 SQLite，没有第三方运行时依赖，不向远端发送网络请求，也不需要关闭 SIP、调试微信或获取微信数据库密钥。
+微迹是一款原生 macOS 通知档案应用，同时提供供 Codex 接入的 **本地 HTTP MCP 服务**。Swift + SwiftUI + 系统 SQLite，没有第三方运行时依赖，不向远端发送网络请求，也不需要关闭 SIP、调试微信或获取微信数据库密钥。
 
 这是通知档案和本地目录图片索引，不是完整聊天数据库。通知内容可能隐藏、合并或截断；免打扰、前台会话、应用退出/休眠期间和自己发送的消息可能没有通知。没有搜索结果不等于没有发生。
 
+原名“微信消息监听”。改名沿用既有签名证书、Bundle ID、数据目录及 MCP 配置；历史通知和设置无需迁移。新构建产物为 `dist/微迹.app`。旧版安装路径的升级说明见 [签名与升级](Documentation/Signing.md)。
+
 ## 打开与采集
 
-1. 打开 `dist/微信消息监听.app`。
+1. 打开 `dist/微迹.app`。
 2. 应用先检查能否读取系统通知；未获得访问权限时显示启动引导，点击“打开权限设置”，将这份应用加入“隐私与安全性 → 完全磁盘访问”。可以点击“在 Finder 中显示本应用”定位文件。返回应用会自动复查；授权后仍受阻时，退出并重新打开应用。
 3. 首次通过检查后，选择是否自动采集、是否连接微信文件目录，再点击“开始使用”进入主界面。后续启动仍先检查访问权限，通过后直接进入。连续采集默认暂停；进入主界面后会补扫一次系统保留的历史通知。
 4. 让微信在后台收到一条有正文的系统通知，检查档案是否新增记录。
@@ -142,7 +144,7 @@ JSONL 的每一行都是独立 JSON，不会把正文换行拆成多条记录。
 应用的可执行文件也可直接使用，不需要另装 Python 或 Node：
 
 ```bash
-APP='/你的路径/微信消息监听.app/Contents/MacOS/WeChatListener'
+APP='/你的路径/微迹.app/Contents/MacOS/WeChatListener'
 "$APP" status
 "$APP" conversations --query '项目'
 "$APP" search --query '报价' --from 2026-10-01 --to 2026-10-15 --limit 50
@@ -177,7 +179,7 @@ bash Scripts/check.sh
 # 仅首次本机配置：创建持久签名私钥，并添加用户级代码签名信任
 python3 Scripts/setup_signing.py --confirm-local-trust
 bash build.sh
-python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeChatListener'
+python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微迹.app/Contents/MacOS/WeChatListener'
 python3 -B Tests/Integration/test_signing_identity.py
 ```
 
@@ -198,7 +200,7 @@ WECHAT_RUN_BENCHMARKS=1 bash Scripts/test.sh -c release --filter catalogPerforma
 演示界面需要独立合成目录：
 
 ```bash
-open 'dist/微信消息监听.app' --args --demo --data-dir /tmp/wechat-listener-demo
+open 'dist/微迹.app' --args --demo --data-dir /tmp/wechat-listener-demo
 ```
 
 ## 已知限制

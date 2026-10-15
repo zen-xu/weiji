@@ -101,7 +101,7 @@ enum CommandLineInterface {
         case "--help", "help":
             print(
                 """
-                微信消息监听 \(ApplicationInfo.version)
+                \(ApplicationInfo.name) \(ApplicationInfo.version)
                 无参数：打开应用，自动提供本地 HTTP MCP 服务
                 mcp-http [--port 18765]：独立运行本地 HTTP MCP 服务（只读本地档案）
                 mcp：兼容旧版 MCP stdio 接入

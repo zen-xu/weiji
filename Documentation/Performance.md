@@ -32,7 +32,7 @@
 ```bash
 bash Scripts/check.sh
 bash build.sh
-python3 Tests/Integration/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeChatListener'
+python3 Tests/Integration/test_mcp_stdio.py 'dist/微迹.app/Contents/MacOS/WeChatListener'
 WECHAT_RUN_BENCHMARKS=1 bash Scripts/test.sh -c release --filter catalogPerformance
 ```
 

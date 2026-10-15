@@ -41,7 +41,7 @@ struct SettingsView: View {
                 Text("不删除微信内容、原文件或已导出的备份。清空前会再次确认。")
             }
             if let error = model.errorText { Section { Text(error).foregroundStyle(.red).textSelection(.enabled) } }
-            Text("微信消息监听 \(ApplicationInfo.version)").font(.caption).foregroundStyle(.secondary)
+            Text("\(ApplicationInfo.name) \(ApplicationInfo.version)").font(.caption).foregroundStyle(.secondary)
         }.formStyle(.grouped)
     }
 }

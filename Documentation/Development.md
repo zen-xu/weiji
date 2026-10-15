@@ -96,7 +96,7 @@ bash Scripts/format.sh --check
 
 ```bash
 bash build.sh
-python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeChatListener'
+python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微迹.app/Contents/MacOS/WeChatListener'
 python3 -B Tests/Integration/test_signing_identity.py
 ```
 

@@ -22,7 +22,7 @@ final class Archive {
             guard version == 1,
                 let id = try database.rows("SELECT value FROM metadata WHERE key='archive_id'").first?.string("value")
             else {
-                throw ListenerError("档案尚未建立，请先打开微信消息监听应用。")
+                throw ListenerError("档案尚未建立，请先打开\(ApplicationInfo.name)应用。")
             }
             archiveID = id
             hasFTS = !(try database.rows("SELECT name FROM sqlite_master WHERE name='messages_fts'")).isEmpty

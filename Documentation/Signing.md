@@ -47,6 +47,12 @@ python3 Tests/Integration/test_signing_identity.py
 CODE_SIGN_IDENTITY=- bash build.sh
 ```
 
+## 更名为“微迹”
+
+1.6.0（build 13）将显示名称和新打包产物改为 `微迹.app`。继续使用原来的证书、`local.xzy.WeChatListener` Bundle ID、`WeChatListener` 可执行文件及应用数据目录，MCP 服务名称和地址也不变。已有档案与设置无需迁移。
+
+本轮只生成 `dist/微迹.app`，保留当前 `/Applications/微信消息监听.app` 运行。历史验证记录中的旧名称与备份路径仍指向实际文件。后续安装优先覆盖原有安装位置，避免同时运行两份应用；如需把安装路径也改为 `/Applications/微迹.app`，须在解锁后验证系统权限条目及有效读取能力。签名身份匹配不代表已经验证授权保留。
+
 ## 本轮状态
 
 2026-10-15：经用户明确同意，已创建并固定本机专用签名证书，配置用户级 `codeSign` 信任；再次运行配置会复用原身份。8 项配置检查通过。两份不同代码和版本号的合成 App 的 DR 一致、双向匹配通过；临时签名及其他 Bundle ID 的程序不能满足该身份规则。

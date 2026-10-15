@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
     assert version and "\n" not in version
     help_text = subprocess.run([str(binary), "--help", "--data-dir", str(untouched)],
                                check=True, capture_output=True, text=True).stdout
-    assert f"微信消息监听 {version}" in help_text
+    assert f"微迹 {version}" in help_text
     retired = subprocess.run([str(binary), "--self-test", "--data-dir", str(untouched)],
                              capture_output=True, text=True)
     assert retired.returncode != 0 and "Scripts/test.sh" in json.loads(retired.stdout)["error"]

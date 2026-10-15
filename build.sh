@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-APP_BUNDLE="$PROJECT_ROOT/dist/微信消息监听.app"
+APP_BUNDLE="$PROJECT_ROOT/dist/微迹.app"
 cd "$PROJECT_ROOT"
 
 python3 Scripts/sign_app.py --check

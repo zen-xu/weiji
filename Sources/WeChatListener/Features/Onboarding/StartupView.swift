@@ -51,7 +51,7 @@ struct StartupView: View {
             if access == .denied {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("打开“隐私与安全性 → 完全磁盘访问”。", systemImage: "1.circle")
-                    Label("添加“微信消息监听”，并开启开关。", systemImage: "2.circle")
+                    Label("添加“\(ApplicationInfo.name)”，并开启开关。", systemImage: "2.circle")
                     Label("返回应用，系统会自动重新检查。", systemImage: "3.circle")
                 }.font(.callout).padding(.vertical, 4)
                 Button("在 Finder 中显示本应用", action: model.revealApplication)

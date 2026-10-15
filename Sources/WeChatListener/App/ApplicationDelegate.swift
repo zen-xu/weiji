@@ -26,7 +26,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered,
             defer: false)
-        window.title = "微信消息监听"
+        window.title = ApplicationInfo.name
         window.titlebarAppearsTransparent = true
         window.minSize = NSSize(width: 600, height: 600)
         window.toolbarStyle = .unified
@@ -39,15 +39,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于微信消息监听", action: #selector(about), keyEquivalent: "")
+        appMenu.addItem(withTitle: "关于\(ApplicationInfo.name)", action: #selector(about), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "显示窗口", action: #selector(showWindow), keyEquivalent: "0")
         appMenu.addItem(withTitle: "开始 / 暂停通知采集", action: #selector(toggle), keyEquivalent: "k")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏微信消息监听", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "退出微信消息监听", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(
+            withTitle: "隐藏\(ApplicationInfo.name)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(
+            withTitle: "退出\(ApplicationInfo.name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
         let fileItem = NSMenuItem()
@@ -76,8 +78,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         NSApp.mainMenu = mainMenu
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(
-            systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: "微信消息监听")
-        statusItem.button?.toolTip = "微信消息监听"
+            systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: ApplicationInfo.name)
+        statusItem.button?.toolTip = ApplicationInfo.name
         let statusMenu = NSMenu()
         statusMenu.delegate = self
         statusItem.menu = statusMenu
@@ -104,7 +106,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             withTitle: startup.isReady ? "打开消息档案" : "完成启动设置…", action: #selector(showWindow), keyEquivalent: "")
         menu.addItem(withTitle: model.isCollecting ? "暂停采集" : "开始采集", action: #selector(toggle), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "退出微信消息监听", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        menu.addItem(
+            withTitle: "退出\(ApplicationInfo.name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         for item in menu.items where item.action != nil {
             item.target = item.action == #selector(NSApplication.terminate(_:)) ? NSApp : self
         }
@@ -168,7 +171,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
     @objc func about() {
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "微信消息监听", .applicationVersion: ApplicationInfo.version,
+            .applicationName: ApplicationInfo.name, .applicationVersion: ApplicationInfo.version,
             .credits: NSAttributedString(string: "本机通知归档与只读 MCP 查询。通知不是完整聊天记录。"),
         ])
     }
