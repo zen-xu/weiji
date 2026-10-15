@@ -1,0 +1,24 @@
+# Build output and local snapshots
+/build/
+/dist/
+/Backups/
+/build-log.txt
+
+# macOS and Python caches
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local configuration and runtime data
+.env
+.env.*
+!.env.example
+/preferences.json
+/runtime.json
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/events.jsonl
+/ImagePreviews/
+/Exports/
+/Logs/
