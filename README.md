@@ -140,7 +140,11 @@ APP='/你的路径/微信消息监听.app/Contents/MacOS/WeChatListener'
 
 ## 构建与验证
 
-需要 macOS 14+ 和 Apple Command Line Tools（`xcode-select --install`）。在项目目录运行：
+需要 macOS 14+ 和 Apple Command Line Tools（`xcode-select --install`）。
+
+`Resources/` 保留当前图标 `AppIcon.icns`、源图 `AppIcon.png`、设计提示词 `AppIcon-prompt.txt` 和应用配置 `Info.plist`。旧图标草稿可从 Git 历史找回；构建缓存和产物由构建命令重新生成。
+
+在项目目录运行：
 
 ```bash
 # 首次本机配置：此命令创建持久签名私钥，并添加用户级代码签名信任
