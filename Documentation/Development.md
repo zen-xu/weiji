@@ -81,7 +81,7 @@ bash Scripts/format.sh --check
 
 使用工具链自带的 `swift-format` 和根目录 `.swift-format`：4 空格缩进、120 字符行宽、排序的 import、多行闭包及参数列表。`.editorconfig` 为编辑器提供相同的基本文本约定。格式检查可以直接放入 CI。
 
-新类型放入对应职责目录。档案扩展使用 `Archive+Feature.swift`，视图扩展使用 `ListenerView+Feature.swift`；消息档案、采集概览、MCP 接入和设置使用各自的 SwiftUI View，共享样式提取为 `SectionCard` 等组件；主视图负责导航与组合。业务模型、持久化和视图分别存放。新增行为通过 Swift Testing 的 `@Test`、`#require` 或 `#expect` 验证。
+新类型放入对应职责目录。档案扩展使用 `Archive+Feature.swift`，视图扩展使用 `ListenerView+Feature.swift`；消息档案、采集概览、MCP 接入和设置使用各自的 SwiftUI View，共享状态栏提取为 `AppBottomBar`、`DirectoryStatusBar` 等组件，页面优先使用原生 List / Table / Form；主视图负责导航与组合。业务模型、持久化和视图分别存放。新增行为通过 Swift Testing 的 `@Test`、`#require` 或 `#expect` 验证。
 
 ## 打包与签名
 
@@ -94,3 +94,5 @@ python3 -B Tests/Integration/test_signing_identity.py
 `build.sh` 用 SwiftPM 构建 release 产品，将可执行文件和图标复制为 `.app`，然后复用现有的固定证书签名并严格校验。测试通过 `check.sh` 单独执行。Bundle ID、安装路径、数据目录和 MCP 工具保持兼容。
 
 首次本机签名配置及授权迁移见 [Signing.md](Signing.md)。`.build/`、`dist/` 和本机签名配置不纳入版本管理。
+
+界面布局和交互约定见 [Interface.md](Interface.md)。真实窗口验证受锁屏状态影响时，须明确区分离屏内容截图和实际交互结果。

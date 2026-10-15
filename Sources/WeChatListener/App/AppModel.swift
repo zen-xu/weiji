@@ -101,6 +101,7 @@ import UniformTypeIdentifiers
     @Published var mcpPortText = String(MCPHTTPServer.defaultPort)
     private lazy var mcpServer = MCPHTTPServer(paths: paths)
     var onStatusChange: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
     let pageSize = 100
 
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
@@ -267,6 +268,7 @@ import UniformTypeIdentifiers
     func savePreferences() {
         do { try preferences.save(paths) } catch { errorText = error.localizedDescription }
     }
+    func openSettings() { onOpenSettings?() }
     func showPrivacy() {
         NSWorkspace.shared.open(
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
@@ -493,9 +495,9 @@ import UniformTypeIdentifiers
                 case .starting:
                     self.mcpListening = false
                     self.mcpStatus = "正在启动本地服务…"
-                case .listening(let port):
+                case .listening:
                     self.mcpListening = true
-                    self.mcpStatus = "运行中 · 127.0.0.1:\(port)"
+                    self.mcpStatus = "运行中"
                 case .stopped:
                     self.mcpListening = false
                     self.mcpStatus = "服务已停止"

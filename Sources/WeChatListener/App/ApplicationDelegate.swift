@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
 
-@MainActor final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+@MainActor
+final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation
+{
     let model: AppModel
     var window: NSWindow!
     var statusItem: NSStatusItem!
+    private var settingsWindow: NSWindow?
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
         model = AppModel(paths: paths, allowNotificationCapture: allowNotificationCapture)
     }
@@ -15,16 +18,20 @@ import SwiftUI
             defer: false)
         window.title = "微信消息监听"
         window.titlebarAppearsTransparent = true
-        window.minSize = NSSize(width: 920, height: 680)
+        window.minSize = NSSize(width: 820, height: 580)
+        window.toolbarStyle = .unified
+        window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: ListenerView(model: model).padding(.top, 12))
+        window.contentViewController = NSHostingController(rootView: ListenerView(model: model))
         window.setFrameAutosaveName("WeChatListenerMainWindow")
         window.center()
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "关于微信消息监听", action: #selector(about), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "显示窗口", action: #selector(showWindow), keyEquivalent: "0")
         appMenu.addItem(withTitle: "开始 / 暂停通知采集", action: #selector(toggle), keyEquivalent: "k")
@@ -33,6 +40,19 @@ import SwiftUI
         appMenu.addItem(withTitle: "退出微信消息监听", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
+        let fileItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "文件")
+        fileMenu.addItem(withTitle: "导入通知…", action: #selector(importNotifications), keyEquivalent: "o")
+        let exportItem = fileMenu.addItem(withTitle: "导出通知为 JSONL…", action: #selector(exportJSONL), keyEquivalent: "e")
+        exportItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(withTitle: "导出通知为 Markdown…", action: #selector(exportMarkdown), keyEquivalent: "")
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        for item in fileMenu.items where item.action != #selector(NSWindow.performClose(_:)) && item.action != nil {
+            item.target = self
+        }
+        fileItem.submenu = fileMenu
+        mainMenu.addItem(fileItem)
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "编辑")
         for (name, selector, key) in [
@@ -52,6 +72,7 @@ import SwiftUI
         statusMenu.delegate = self
         statusItem.menu = statusMenu
         model.onStatusChange = { [weak self] in self?.statusItem.button?.toolTip = self?.model.statusText }
+        model.onOpenSettings = { [weak self] in self?.showSettings() }
         showWindow()
         model.startUp()
     }
@@ -73,6 +94,33 @@ import SwiftUI
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+    @objc func showSettings() {
+        if settingsWindow == nil {
+            let settings = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
+                styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            settings.title = "设置"
+            settings.isReleasedWhenClosed = false
+            settings.tabbingMode = .disallowed
+            settings.contentViewController = NSHostingController(
+                rootView: SettingsView(model: model).frame(width: 560, height: 560))
+            settings.center()
+            settingsWindow = settings
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let action = item.action,
+            [#selector(importNotifications), #selector(exportJSONL), #selector(exportMarkdown)].contains(action)
+        {
+            return !model.isWorking
+        }
+        return true
+    }
+    @objc func importNotifications() { model.importArchive() }
+    @objc func exportJSONL() { model.exportArchive(markdown: false) }
+    @objc func exportMarkdown() { model.exportArchive(markdown: true) }
     @objc func toggle() { model.toggleCollection() }
     @objc func about() {
         NSApp.orderFrontStandardAboutPanel(options: [

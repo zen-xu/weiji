@@ -8,6 +8,7 @@ struct ImagePreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
     @State private var image: NSImage?
+    @State private var isLoading = true
     @State private var fit = true
     @State private var zoom: CGFloat = 1
     var body: some View {
@@ -49,6 +50,8 @@ struct ImagePreviewSheet: View {
                         .frame(minWidth: max(1, available.width), minHeight: max(1, available.height)).padding(16)
                     }
                 }
+            } else if isLoading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ContentUnavailableView("预览不可用", systemImage: "photo", description: Text("请关闭后重新扫描图片。"))
             }
@@ -65,9 +68,11 @@ struct ImagePreviewSheet: View {
         }.frame(minWidth: 760, idealWidth: 960, minHeight: 540, idealHeight: 740)
             .task(id: preview.token) {
                 image = nil
+                isLoading = true
                 let decoded = await PreviewImageLoader.load(preview, paths: paths)
                 guard !Task.isCancelled else { return }
                 image = decoded.map { NSImage(cgImage: $0, size: .zero) }
+                isLoading = false
             }
     }
 }

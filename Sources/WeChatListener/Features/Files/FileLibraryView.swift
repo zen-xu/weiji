@@ -1,81 +1,71 @@
 import SwiftUI
 
-struct DiscoveredFileRow: View {
-    let file: DiscoveredFile
-    @ObservedObject var model: AppModel
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.text").font(.title2).foregroundStyle(AppTheme.accentColor).frame(width: 32)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(file.name).font(.callout.weight(.medium)).lineLimit(2).textSelection(.enabled)
-                Text(
-                    "\(file.sizeLabel) · \((Dates.parse(file.modifiedAt) ?? .distantPast).formatted(date: .abbreviated, time: .shortened))"
-                )
-                .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
-            Button("打开") { model.openFile(file) }.font(.caption)
-            Button {
-                model.openFile(file, reveal: true)
-            } label: {
-                Image(systemName: "folder")
-            }.help("在 Finder 中显示")
-        }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.accentColor.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-    }
-}
-
 struct FileLibraryView: View {
     @ObservedObject var model: AppModel
+    @State private var selection = Set<String>()
+
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Label(model.fileScanStatus, systemImage: "folder.badge.gearshape").font(.callout)
-                        Spacer()
-                        if model.fileScanBusy { ProgressView().controlSize(.small) }
-                        Button("选择目录…", action: model.chooseFileDirectory)
-                        Button("立即扫描", action: model.scanFiles).disabled(
-                            model.fileScanBusy || model.preferences.fileDirectory == nil)
-                    }
-                    if let directory = model.preferences.fileDirectory {
-                        Text(directory).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    }
-                    Text("文件变化自动更新，每 15 秒补扫；暂停通知采集也会扫描。普通文件建立名称与路径索引；图片按会话和时间定位，再补充同组清晰版本；成功解码后可在消息中预览，可信度交由 AI 评估。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                TextField("按文件名搜索…", text: $model.fileSearch).textFieldStyle(.roundedBorder)
-            }.padding(24)
-            Divider()
+            DirectoryStatusBar(model: model)
             if model.files.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "folder").font(.system(size: 40, weight: .light)).foregroundStyle(
-                        AppTheme.accentColor)
-                    Text(model.preferences.fileDirectory == nil ? "选择微信账号目录，开始探测本地文件" : "当前没有匹配的本地文件").font(.headline)
-                    Text("文件来自本地目录，不能仅凭同名或时间确认它属于某条聊天消息。").font(.caption).foregroundStyle(.secondary)
+                ContentUnavailableView {
+                    Label(model.preferences.fileDirectory == nil ? "选择微信账号目录" : "没有匹配的文件", systemImage: "folder")
+                } description: {
+                    Text(model.preferences.fileDirectory == nil ? "选择后自动索引本机文件，原文件不会被修改。" : "试试其他文件名，或检查目录是否可访问。")
+                } actions: {
+                    if model.preferences.fileDirectory == nil { Button("选择目录…", action: model.chooseFileDirectory) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(model.files) { file in DiscoveredFileRow(file: file, model: model) }
-                    }.padding(.horizontal, 24).padding(.vertical, 16)
+                Table(model.files, selection: $selection) {
+                    TableColumn("名称") { file in
+                        Label(file.name, systemImage: "doc.text").lineLimit(1).truncationMode(.middle).help(file.name)
+                    }
+                    .width(min: 180, ideal: 350)
+                    TableColumn("大小") { file in Text(file.sizeLabel).font(.caption).foregroundStyle(.secondary) }
+                        .width(min: 65, ideal: 80, max: 100)
+                    TableColumn("修改日期") { file in
+                        Text(
+                            (Dates.parse(file.modifiedAt) ?? .distantPast).formatted(
+                                date: .numeric, time: .shortened)
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                    }.width(min: 145, ideal: 170, max: 190)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let file = file(for: ids) {
+                        Button("打开") { model.openFile(file) }
+                        Button("在 Finder 中显示") { model.openFile(file, reveal: true) }
+                    }
+                } primaryAction: { ids in
+                    if let file = file(for: ids) { model.openFile(file) }
                 }
             }
             AppBottomBar {
-                Text("\(model.fileTotal) 个匹配文件").font(.caption).foregroundStyle(.secondary)
-                Spacer()
+                Text("\(model.fileTotal) 个文件").font(.caption).foregroundStyle(.secondary)
+                if let selected = file(for: selection) {
+                    Button("打开") { model.openFile(selected) }
+                    Button("在 Finder 中显示") { model.openFile(selected, reveal: true) }
+                }
+                Spacer(minLength: 8)
                 Button {
                     model.paginateFiles(-1)
                 } label: {
                     Image(systemName: "chevron.left")
-                }.disabled(model.fileOffset == 0)
+                }
+                .disabled(model.fileOffset == 0).help("上一页").accessibilityLabel("上一页")
                 Button {
                     model.paginateFiles(1)
                 } label: {
                     Image(systemName: "chevron.right")
-                }.disabled(model.fileOffset + model.files.count >= model.fileTotal)
+                }
+                .disabled(model.fileOffset + model.files.count >= model.fileTotal).help("下一页").accessibilityLabel("下一页")
             }
         }
+        .onChange(of: model.fileOffset) { selection.removeAll() }
+    }
+
+    private func file(for ids: Set<String>) -> DiscoveredFile? {
+        guard ids.count == 1, let id = ids.first else { return nil }
+        return model.files.first { $0.id == id }
     }
 }

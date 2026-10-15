@@ -1,97 +1,105 @@
-import AppKit
 import SwiftUI
 
 struct MessageArchiveView: View {
     @ObservedObject var model: AppModel
+    @State private var showingCoverage = false
+
     var body: some View {
-        let displayedMessages = model.messages
-        return VStack(spacing: 0) {
-            HStack(spacing: 12) {
+        let messages = model.messages
+        VStack(spacing: 0) {
+            VStack(spacing: 8) {
                 HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜索消息、发送者、群名…", text: $model.search).textFieldStyle(.plain)
-                    if !model.search.isEmpty {
-                        Button {
-                            model.search = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }.buttonStyle(.plain)
+                    Picker("时间范围", selection: $model.dateScope) {
+                        ForEach(DateScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.labelsHidden().frame(width: 130)
+                    if model.selected?.identitySource == "display_title_fallback" {
+                        Text("按通知标题分组").font(.caption).foregroundStyle(.secondary)
+                            .help("缺少可靠的会话标识，同名联系人可能出现在同一分组中。")
                     }
-                }.padding(10).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
-                Picker("时间", selection: $model.dateScope) {
-                    ForEach(DateScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }.labelsHidden().frame(width: 120)
-            }.padding(.horizontal, 26).padding(.bottom, 16)
-            if model.dateScope == .custom {
-                HStack {
-                    DatePicker("从", selection: $model.fromDate, displayedComponents: .date)
-                    DatePicker("到", selection: $model.toDate, in: model.fromDate..., displayedComponents: .date)
                     Spacer()
-                }.padding(.horizontal, 26).padding(.bottom, 12)
-            }
-            HStack(spacing: 7) {
-                Image(systemName: "info.circle")
-                Text(
-                    model.selected?.identitySource == "display_title_fallback"
-                        ? "此会话按通知标题分组，同名联系人可能混在一起。" : "只包含系统通知；免打扰、前台消息和自己发送的内容可能缺失。")
-                Spacer()
-            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 26).padding(.bottom, 14)
+                    if model.loading { ProgressView().controlSize(.small) }
+                    Button {
+                        showingCoverage.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.borderless).help("通知覆盖范围").accessibilityLabel("通知覆盖范围")
+                    .popover(isPresented: $showingCoverage) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("关于通知档案").font(.headline)
+                            Text(NotificationCoverage.notice).foregroundStyle(.secondary)
+                        }.padding(20).frame(width: 340)
+                    }
+                }
+                if model.dateScope == .custom {
+                    HStack {
+                        DatePicker("从", selection: $model.fromDate, displayedComponents: .date)
+                        DatePicker("到", selection: $model.toDate, in: model.fromDate..., displayedComponents: .date)
+                        Spacer()
+                    }
+                }
+            }.controlSize(.small).padding(.horizontal, 20).padding(.vertical, 10)
             Divider()
-            if model.messages.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: model.search.isEmpty ? "bubble.left.and.text.bubble.right" : "magnifyingglass")
-                        .font(.system(size: 42, weight: .light)).foregroundStyle(AppTheme.accentColor.opacity(0.7))
-                    Text(model.stats?.messages == 0 ? "从下一条通知开始，留下记录" : "当前筛选没有匹配的通知").font(.title3.weight(.medium))
-                    Text(
-                        model.stats?.messages == 0 ? "开始采集后，收到的微信通知会保存在这里。\n也可以导入之前的验证数据。" : "可以调整关键词或日期。没有结果不代表事情没有发生。"
-                    )
-                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if messages.isEmpty {
+                ContentUnavailableView {
+                    Label(
+                        model.stats?.messages == 0 ? "尚无通知" : "没有匹配的通知",
+                        systemImage: model.search.isEmpty ? "tray" : "magnifyingglass")
+                } description: {
+                    Text(model.stats?.messages == 0 ? "开始采集后，收到的微信通知会保存在这里。" : "试试其他关键词或时间范围。")
+                } actions: {
                     if model.stats?.messages == 0 {
-                        HStack {
-                            Button("导入旧数据", action: model.importArchive)
-                            Button("查看采集状态") { model.page = .overview }
-                        }
+                        Button("查看采集状态") { model.page = .overview }
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
                             if index == 0
-                                || !Calendar.current.isDate(
-                                    message.date, inSameDayAs: displayedMessages[index - 1].date)
+                                || !Calendar.current.isDate(message.date, inSameDayAs: messages[index - 1].date)
                             {
-                                Text(message.date.formatted(date: .complete, time: .omitted)).font(
-                                    .caption.weight(.medium)
-                                ).foregroundStyle(.secondary).padding(.vertical, 4)
+                                Text(dayTitle(message.date)).font(.subheadline.weight(.semibold)).foregroundStyle(
+                                    .secondary
+                                )
+                                .padding(.top, index == 0 ? 8 : 20).padding(.bottom, 4)
+                            } else {
+                                Divider()
                             }
-                            MessageCard(message: message, model: model)
+                            MessageRow(message: message, model: model)
                         }
-                    }.padding(24)
-                }
+                    }.frame(maxWidth: 880, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 20)
+                        .frame(maxWidth: .infinity)
+                }.id(model.selectedID ?? "all-notifications")
             }
             AppBottomBar {
                 Text(
                     model.total == 0
-                        ? "0 条通知" : "第 \(model.offset + 1)–\(model.offset + model.messages.count) 条，共 \(model.total) 条"
-                ).font(.caption).foregroundStyle(.secondary)
+                        ? "0 条通知" : "\(model.offset + 1)–\(model.offset + messages.count) / \(model.total) 条通知"
+                )
+                .font(.caption).foregroundStyle(.secondary)
+                Text("仅系统通知").font(.caption).foregroundStyle(.tertiary).help(NotificationCoverage.notice)
                 Spacer()
                 Button {
                     model.paginate(-1)
                 } label: {
                     Image(systemName: "chevron.left")
-                }.disabled(model.offset == 0 || model.loading)
+                }
+                .disabled(model.offset == 0 || model.loading).help("上一页").accessibilityLabel("上一页")
                 Button {
                     model.paginate(1)
                 } label: {
                     Image(systemName: "chevron.right")
-                }.disabled(model.offset + model.messages.count >= model.total || model.loading)
-                Button {
-                    model.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }.help("刷新本地档案")
+                }
+                .disabled(model.offset + messages.count >= model.total || model.loading).help("下一页").accessibilityLabel(
+                    "下一页")
             }
-        }
+        }.background(.background)
+    }
+
+    private func dayTitle(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) { return "今天" }
+        if Calendar.current.isDateInYesterday(date) { return "昨天" }
+        return date.formatted(date: .complete, time: .omitted)
     }
 }
