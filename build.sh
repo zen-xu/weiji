@@ -1,17 +1,16 @@
 #!/bin/bash
 set -euo pipefail
-TASK_ROOT="$(cd "$(dirname "$0")" && pwd)"
-TASK_ARCH="$(uname -m)"
-TASK_APP="$TASK_ROOT/dist/微信消息监听.app"
-python3 "$TASK_ROOT/Scripts/sign_app.py" --check
-mkdir -p "$TASK_ROOT/build/module-cache" "$TASK_APP/Contents/MacOS" "$TASK_APP/Contents/Resources"
-swiftc -O -swift-version 5 -target "$TASK_ARCH-apple-macos14.0" \
-  -module-cache-path "$TASK_ROOT/build/module-cache" \
-  "$TASK_ROOT"/Sources/*.swift "$TASK_ROOT"/Tests/*.swift \
-  -framework AppKit -framework SwiftUI -framework CryptoKit -framework VideoToolbox -framework CoreImage -framework ImageIO -framework CoreServices -lsqlite3 \
-  -o "$TASK_APP/Contents/MacOS/WeChatListener"
-cp "$TASK_ROOT/Resources/AppIcon.icns" "$TASK_APP/Contents/Resources/AppIcon.icns"
-cp "$TASK_ROOT/Resources/Info.plist" "$TASK_APP/Contents/Info.plist"
-python3 "$TASK_ROOT/Scripts/sign_app.py" "$TASK_APP"
-"$TASK_APP/Contents/MacOS/WeChatListener" --self-test
-printf '已构建并验证：%s\n' "$TASK_APP"
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+APP_BUNDLE="$PROJECT_ROOT/dist/微信消息监听.app"
+cd "$PROJECT_ROOT"
+
+python3 Scripts/sign_app.py --check
+swift build --configuration release --product WeChatListener
+BINARY_DIRECTORY="$(swift build --configuration release --show-bin-path)"
+
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+cp "$BINARY_DIRECTORY/WeChatListener" "$APP_BUNDLE/Contents/MacOS/WeChatListener"
+cp Resources/AppIcon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+cp Resources/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+python3 Scripts/sign_app.py "$APP_BUNDLE"
+printf '已打包并验证签名：%s\n' "$APP_BUNDLE"

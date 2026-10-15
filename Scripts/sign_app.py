@@ -16,7 +16,7 @@ def settings():
     keychain = os.environ.get("CODE_SIGN_KEYCHAIN")
     if not identity:
         if not CONFIG.is_file():
-            raise RuntimeError("尚未配置固定签名。先阅读 SIGNING.md 并配置身份；仅临时测试可显式设置 CODE_SIGN_IDENTITY=-。")
+            raise RuntimeError("尚未配置固定签名。先阅读 Documentation/Signing.md 并配置身份；仅临时测试可显式设置 CODE_SIGN_IDENTITY=-。")
         config = json.loads(CONFIG.read_text())
         identity, keychain = config["identity"], config["keychain"]
         if not re.fullmatch(r"[0-9A-F]{40}", identity):

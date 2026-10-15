@@ -11,7 +11,7 @@
 3. 授权后退出应用并重新打开，再点击“开始采集”。连续采集默认暂停；每次打开应用仍会补扫一次系统保留的历史通知。
 4. 让微信在后台收到一条有正文的系统通知，检查档案是否新增记录。
 
-从旧版临时签名切换到固定证书签名时，需要重新添加一次完全磁盘访问授权。之后的构建复用同一证书及 Bundle ID，避免身份随二进制变化。配置方法和验证边界见 [SIGNING.md](SIGNING.md)。
+从旧版临时签名切换到固定证书签名时，需要重新添加一次完全磁盘访问授权。之后的构建复用同一证书及 Bundle ID，避免身份随二进制变化。配置方法和验证边界见 [Documentation/Signing.md](Documentation/Signing.md)。
 
 关闭窗口后应用会留在菜单栏运行。“暂停通知采集”只停止读取通知；目录监听继续工作，菜单栏“退出”会停止整个应用。应用不会自动安装登录启动项；设置中的“打开应用后自动开始采集通知”只影响应用启动后的行为。
 
@@ -138,32 +138,45 @@ APP='/你的路径/微信消息监听.app/Contents/MacOS/WeChatListener'
 
 `capture-once` 会读取一次系统当前保留的微信通知，需要调用进程有相应读取权限。MCP 不暴露此命令。
 
-## 构建与验证
+## 开发、构建与验证
 
-需要 macOS 14+ 和 Apple Command Line Tools（`xcode-select --install`）。
-
-`Resources/` 保留当前图标 `AppIcon.icns`、源图 `AppIcon.png`、设计提示词 `AppIcon-prompt.txt` 和应用配置 `Info.plist`。旧图标草稿可从 Git 历史找回；构建缓存和产物由构建命令重新生成。
-
-在项目目录运行：
+项目采用 Swift Package Manager，要求 macOS 14+ 和 Swift 6 工具链。直接打开 `Package.swift` 即可用 Xcode 浏览目标和源码。
 
 ```bash
-# 首次本机配置：此命令创建持久签名私钥，并添加用户级代码签名信任
-python3 Scripts/setup_signing.py --confirm-local-trust
-bash build.sh
-python3 Tests/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeChatListener'
-python3 Tests/test_signing_config.py
-python3 Tests/test_signing_identity.py
+swift build
+swift run WeChatListener --help
+bash Scripts/check.sh
 ```
 
-构建使用系统 SDK、Python 3 和钥匙串中的固定签名身份；应用运行没有 Python 依赖。默认从忽略的 `.local-signing/identity.json` 读取已固定的证书指纹，配置缺失或证书不可用时构建会停止。也可通过 `CODE_SIGN_IDENTITY` 和可选的 `CODE_SIGN_KEYCHAIN` 选择已有身份。仅临时测试可用 `CODE_SIGN_IDENTITY=- bash build.sh`，这类构建更新后可能丢失旧授权。
+源码按应用入口、命令行、持久化和功能目录组织；Swift Testing、性能基准和 MCP 进程测试是独立目标，不会编入生产 App。目录结构、测试、格式及工具链说明见 [开发指南](Documentation/Development.md)。
 
-本机自签名身份**不等于 Developer ID 签名或 Apple 公证**。构建执行严格签名校验；164 项 Swift 检查、MCP 独立进程和签名身份测试只使用临时目录里的合成数据，不读取真实通知，也不联网。演示模式不会启动真实通知采集。
+`Resources/` 保留当前图标 `AppIcon.icns`、源图 `AppIcon.png`、设计提示词 `AppIcon-prompt.txt` 和应用配置 `Info.plist`。版本号统一从打包后的 Bundle 元数据读取。旧图标草稿可从 Git 历史找回。
 
-性能基准可运行 `python3 Tests/benchmark_performance.py`：自动编译测试程序，在临时目录生成 10,000 个合成图片文件和 1,000 个文档，测量首次索引、无变化重扫和图片分页查询，完成后删除测试数据。结果和测量边界见 [PERFORMANCE.md](PERFORMANCE.md)。
+打包为可安装应用：
+
+```bash
+# 仅首次本机配置：创建持久签名私钥，并添加用户级代码签名信任
+python3 Scripts/setup_signing.py --confirm-local-trust
+bash build.sh
+python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeChatListener'
+python3 -B Tests/Integration/test_signing_identity.py
+```
+
+`build.sh` 使用 SwiftPM 的 release 产品生成 `.app`，复用固定签名身份并严格校验；`check.sh` 独立检查格式、Swift Testing、签名配置和真实 MCP stdio 进程。当前 Swift 测试保留原有 164 项合成断言，不读取真实通知或访问网络。图片文件保护的读取验证需要 Mac 处于解锁状态。应用运行没有 Python 或第三方运行时依赖。
+
+默认从忽略的 `.local-signing/identity.json` 读取已固定的证书指纹，配置缺失或证书不可用时打包会停止。也可通过 `CODE_SIGN_IDENTITY` 和可选的 `CODE_SIGN_KEYCHAIN` 选择已有身份。本机自签名身份不等于 Developer ID 或 Apple 公证。配置和验证边界见 [签名说明](Documentation/Signing.md)。
+
+性能基准默认跳过，手动运行：
+
+```bash
+WECHAT_RUN_BENCHMARKS=1 bash Scripts/test.sh -c release --filter catalogPerformance
+```
+
+基准在临时目录生成 10,000 个合成图片文件和 1,000 个文档，测量首次索引、无变化重扫和图片分页查询，完成后删除测试资料；测量边界见 [性能记录](Documentation/Performance.md)。
 
 重扫仍检查文件元数据；大小和修改时间未变时复用格式信息，不改写目录索引。图片列表合并读取同页版本和预览，显示时在后台加载并解压，使用 32 MB 预算的内存缓存。文件和图片搜索在连续输入停顿 250 ms 后查询。
 
-演示界面（合成数据须放在独立目录）：
+演示界面需要独立合成目录：
 
 ```bash
 open 'dist/微信消息监听.app' --args --demo --data-dir /tmp/wechat-listener-demo

@@ -1,11 +1,15 @@
 # Build output and local snapshots
 /build/
+/.build/
+/.swiftpm/
 /dist/
 /Backups/
 /build-log.txt
 
 # macOS and Python caches
 .DS_Store
+xcuserdata/
+*.xcuserstate
 __pycache__/
 *.py[cod]
 
