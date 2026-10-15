@@ -42,6 +42,6 @@ struct SettingsView: View {
             }
             if let error = model.errorText { Section { Text(error).foregroundStyle(.red).textSelection(.enabled) } }
             Text("\(ApplicationInfo.name) \(ApplicationInfo.version)").font(.caption).foregroundStyle(.secondary)
-        }.formStyle(.grouped)
+        }.formStyle(.grouped).weijiAccent()
     }
 }

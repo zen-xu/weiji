@@ -63,7 +63,7 @@ struct StartupView: View {
 
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Label("通知访问已就绪", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.callout)
+            Label("通知访问已就绪", systemImage: "checkmark.circle.fill").foregroundStyle(AppAppearance.accent).font(.callout)
             Text("设置采集方式").font(.title2.weight(.semibold))
             Toggle("打开应用后自动采集通知", isOn: $model.preferences.collectOnLaunch)
                 .toggleStyle(.checkbox)

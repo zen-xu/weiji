@@ -1,8 +1,14 @@
 # macOS 界面约定
 
-界面优先使用系统控件、系统字体和用户的强调色。主任务是查看已归档通知和本机文件，默认页面应把空间留给内容。工具栏取舍参考 [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/toolbars)。
+界面优先使用系统控件和系统字体，以微信风格的绿色作为应用强调色。主任务是查看已归档通知和本机文件，默认页面应把空间留给内容。工具栏取舍参考 [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/toolbars)。
 
 应用中文名为“微迹”。窗口、菜单、关于面板、设置、启动引导和命令行帮助统一使用 `ApplicationInfo.name`；Bundle 显示名称与打包文件名保持一致。已有数据、签名身份及 MCP 接入标识继续沿用。
+
+## 颜色
+
+- `AppAppearance` 统一维护颜色。深色模式使用 `#07C160`，浅色模式加深为 `#008843`，提高白底上的文字与白色按钮文字的对比度；增强对比度模式分别使用 `#006B35` / `#2BDF7B`。
+- 主窗口、启动引导和独立设置窗口统一注入 SwiftUI tint / accentColor，作用于支持强调色的原生按钮、选择与开关。保留原生控件的尺寸、文字、焦点、禁用和非活动窗口样式。
+- 就绪/运行中的图标及成功反馈使用相同绿色。背景、正文与分隔线继续使用系统语义色，错误和警告保留红/橙色。保持留白，不增加绿色卡片或整块背景。
 
 ## 导航与操作
 

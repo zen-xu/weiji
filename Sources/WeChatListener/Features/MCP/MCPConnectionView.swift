@@ -8,7 +8,9 @@ struct MCPConnectionView: View {
             Section("本地服务") {
                 LabeledContent("状态") {
                     HStack(spacing: 6) {
-                        if model.mcpListening { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                        if model.mcpListening {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(AppAppearance.accent)
+                        }
                         Text(model.mcpStatus).foregroundStyle(.secondary)
                     }
                 }

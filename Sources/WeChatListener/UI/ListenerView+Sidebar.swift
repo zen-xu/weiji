@@ -36,7 +36,8 @@ extension ListenerView {
             }
             .listStyle(.sidebar)
             AppBottomBar(horizontalPadding: 12) {
-                Image(systemName: model.isCollecting ? "record.circle" : "pause.circle").foregroundStyle(.secondary)
+                Image(systemName: model.isCollecting ? "record.circle" : "pause.circle")
+                    .foregroundStyle(model.isCollecting ? AppAppearance.accent : Color.secondary)
                 Text(model.isCollecting ? "正在采集" : "采集已暂停").font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 Button(action: model.openSettings) { Image(systemName: "gearshape") }

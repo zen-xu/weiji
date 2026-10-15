@@ -34,7 +34,7 @@ extension ListenerView {
     func banner(_ text: String, error: Bool) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: error ? "exclamationmark.triangle" : "checkmark.circle")
-                .foregroundStyle(error ? Color.orange : Color.secondary)
+                .foregroundStyle(error ? Color.orange : AppAppearance.accent)
             Text(text).font(.callout).textSelection(.enabled)
             Spacer()
             Button {

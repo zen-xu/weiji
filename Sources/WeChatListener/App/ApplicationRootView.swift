@@ -5,10 +5,12 @@ struct ApplicationRootView: View {
     @ObservedObject var startup: StartupCoordinator
 
     var body: some View {
-        if startup.isReady {
-            ListenerView(model: model)
-        } else {
-            StartupView(model: model, startup: startup)
-        }
+        Group {
+            if startup.isReady {
+                ListenerView(model: model)
+            } else {
+                StartupView(model: model, startup: startup)
+            }
+        }.weijiAccent()
     }
 }
