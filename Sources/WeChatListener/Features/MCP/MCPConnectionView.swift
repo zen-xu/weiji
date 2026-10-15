@@ -36,7 +36,6 @@ struct MCPConnectionView: View {
             Section("连接 Codex") {
                 Text("在 Codex 的 MCP 设置中选择 Streamable HTTP，填入上面的服务地址并保存。")
                 Text("已有同名配置时，将其替换为这个地址。").font(.caption).foregroundStyle(.secondary)
-                Button("复制服务地址") { model.copy(model.mcpURL) }.disabled(!model.mcpListening)
             }
             Section {
                 DisclosureGroup("高级设置") {
@@ -46,6 +45,8 @@ struct MCPConnectionView: View {
                         TextField("18765", text: $model.mcpPortText).textFieldStyle(.roundedBorder).frame(width: 90)
                             .accessibilityLabel("服务端口").onSubmit(model.applyMCPPort)
                         Button("应用并重启", action: model.applyMCPPort)
+                            .disabled(
+                                model.mcpPortText == String(model.preferences.mcpPort ?? MCPHTTPServer.defaultPort))
                     }
                     Text("修改后需同步更新 Codex 的地址。").font(.caption).foregroundStyle(.secondary)
                     Text(model.mcpConfiguration).font(.system(.caption, design: .monospaced)).textSelection(.enabled)

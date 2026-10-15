@@ -7,13 +7,14 @@ struct CollectionOverviewView: View {
         Form {
             Section("通知采集") {
                 LabeledContent("状态") {
-                    if model.pollBusy { ProgressView().controlSize(.small) }
+                    if model.pollBusy { ProgressView().controlSize(.small).accessibilityLabel("正在读取系统通知") }
                     Text(model.statusText).foregroundStyle(.secondary)
                     Button(model.isCollecting ? "暂停采集" : "开始采集", action: model.toggleCollection)
+                        .disabled(model.isWorking)
                 }
                 LabeledContent("上次检查", value: model.lastPoll?.formatted(date: .abbreviated, time: .standard) ?? "尚未检查")
                 LabeledContent("系统保留通知", value: model.sourceRows.formatted())
-                Button("补扫系统保留的通知") { model.poll(oneShot: true) }.disabled(model.pollBusy)
+                Button("补扫系统保留的通知") { model.poll(oneShot: true) }.disabled(model.pollBusy || model.isWorking)
             }
             Section("本地档案") {
                 LabeledContent("已归档通知", value: (model.stats?.messages ?? 0).formatted())

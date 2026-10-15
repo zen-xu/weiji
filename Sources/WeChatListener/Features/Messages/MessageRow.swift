@@ -22,7 +22,8 @@ struct MessageRow: View {
                         message.displayName,
                         systemImage: presentation.isGroup || presentation.isInferredGroup ? "person.2" : "bubble.left")
                 }
-                .buttonStyle(.link).font(.caption).lineLimit(1)
+                .buttonStyle(.plain).foregroundStyle(AppAppearance.accent).font(.caption).lineLimit(1)
+                .help("查看此会话").accessibilityHint("筛选到此会话的通知")
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if model.selectedID == nil && !showsConversation {
@@ -45,6 +46,7 @@ struct MessageRow: View {
                     Image(systemName: "ellipsis")
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .frame(minWidth: 24, minHeight: 24)
                 .help("通知操作").accessibilityLabel("通知操作")
             }
             Text(presentation.body.isEmpty ? "通知未提供正文" : presentation.body)

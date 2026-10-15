@@ -37,7 +37,8 @@ struct ImageAssociationCard: View {
             DisclosureGroup("文件详情\(group.versions.count > 1 ? " · \(group.versions.count) 个版本" : "")") {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(item.file.name).textSelection(.enabled)
+                        Text(item.file.name).lineLimit(1).truncationMode(.middle).textSelection(.enabled).help(
+                            item.file.name)
                         Text(
                             "\(item.file.sizeLabel) · \(item.matchesTimeWindow ? "时间差" : "同组版本，时间差") \(String(format: "%+.3f", item.secondsFromNotification)) 秒"
                         )
@@ -71,7 +72,7 @@ struct ImageAssociationCard: View {
         .task(id: (item.preview?.token ?? "") + (item.preview?.state ?? "")) {
             thumbnail = nil
             isLoading = true
-            guard let preview = item.preview else {
+            guard let preview = item.preview, preview.state == "ready" else {
                 isLoading = false
                 return
             }

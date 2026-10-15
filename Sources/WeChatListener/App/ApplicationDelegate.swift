@@ -67,14 +67,37 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         mainMenu.addItem(fileItem)
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
         for (name, selector, key) in [
             ("剪切", #selector(NSText.cut(_:)), "x"), ("复制", #selector(NSText.copy(_:)), "c"),
             ("粘贴", #selector(NSText.paste(_:)), "v"), ("全选", #selector(NSText.selectAll(_:)), "a"),
         ] {
             editMenu.addItem(withTitle: name, action: selector, keyEquivalent: key)
         }
+        editMenu.addItem(.separator())
+        let find = editMenu.addItem(withTitle: "搜索", action: #selector(focusSearch), keyEquivalent: "f")
+        find.target = self
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
+        let viewItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "显示")
+        let sidebar = viewMenu.addItem(
+            withTitle: "显示 / 隐藏边栏", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
+        sidebar.keyEquivalentModifierMask = [.command, .control]
+        viewItem.submenu = viewMenu
+        mainMenu.addItem(viewItem)
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(withTitle: "前置全部窗口", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        mainMenu.addItem(windowItem)
+        NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = mainMenu
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(
@@ -149,6 +172,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         NSApp.activate(ignoringOtherApps: true)
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(focusSearch) {
+            return startup.isReady && [.archive, .files, .images].contains(model.page)
+        }
         if let action = item.action,
             [
                 #selector(importNotifications), #selector(exportJSONL), #selector(exportMarkdown), #selector(toggle),
@@ -160,6 +186,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         return true
     }
     @objc func importNotifications() { model.importArchive() }
+    @objc func focusSearch() {
+        guard startup.isReady, [.archive, .files, .images].contains(model.page) else { return }
+        showWindow()
+        model.searchPresented = true
+    }
     @objc func exportJSONL() { model.exportArchive(markdown: false) }
     @objc func exportMarkdown() { model.exportArchive(markdown: true) }
     @objc func toggle() {

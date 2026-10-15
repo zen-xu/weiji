@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
     private(set) var isShuttingDown = false
     let allowNotificationCapture: Bool
     @Published var page: Page = .archive
+    @Published var searchPresented = false
     @Published var conversations: [Conversation] = []
     @Published var messages: [Message] = []
     @Published var messageFiles: [String: [DiscoveredFile]] = [:]
@@ -76,6 +77,10 @@ import UniformTypeIdentifiers
     @Published var fromDate = Calendar.current.startOfDay(for: Date()) {
         didSet {
             offset = 0
+            if toDate < fromDate {
+                toDate = fromDate
+                return
+            }
             refresh()
         }
     }
@@ -670,7 +675,7 @@ import UniformTypeIdentifiers
     func stopMCPServer() { mcpServer.stop() }
     func applyMCPPort() {
         guard let port = UInt16(mcpPortText.trimmingCharacters(in: .whitespacesAndNewlines)), port > 0 else {
-            feedback = "端口必须是 1…65535 的整数"
+            errorText = "端口必须是 1…65535 的整数"
             return
         }
         do {

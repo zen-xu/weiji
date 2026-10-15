@@ -12,12 +12,22 @@ struct ImageLibraryView: View {
             } else if model.directoryImages.isEmpty {
                 ContentUnavailableView {
                     Label(
-                        model.preferences.fileDirectory == nil ? "选择微信账号目录" : "尚无目录图片",
-                        systemImage: "photo.on.rectangle")
+                        model.preferences.fileDirectory == nil
+                            ? "选择微信账号目录" : model.directoryImageSearch.isEmpty ? "尚无目录图片" : "没有匹配的图片",
+                        systemImage: model.directoryImageSearch.isEmpty ? "photo.on.rectangle" : "magnifyingglass")
                 } description: {
-                    Text(model.preferences.fileDirectory == nil ? "选择后自动探测并解码本机图片。" : "图片保存到本机后，会自动出现在这里。")
+                    Text(
+                        model.preferences.fileDirectory == nil
+                            ? "选择后自动探测并解码本机图片。"
+                            : model.directoryImageSearch.isEmpty ? "图片保存到本机后，会自动出现在这里。" : "试试其他文件名，或清除搜索查看全部图片。")
                 } actions: {
-                    if model.preferences.fileDirectory == nil { Button("选择目录…", action: model.chooseFileDirectory) }
+                    if model.preferences.fileDirectory == nil {
+                        Button("选择目录…", action: model.chooseFileDirectory).disabled(model.isWorking)
+                    } else if !model.directoryImageSearch.isEmpty {
+                        Button("清除搜索") { model.directoryImageSearch = "" }
+                    } else {
+                        Button("扫描目录", action: model.scanFiles).disabled(model.fileScanBusy || model.isWorking)
+                    }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
@@ -27,26 +37,25 @@ struct ImageLibraryView: View {
                     ) {
                         ForEach(model.directoryImages) { group in DirectoryImageCard(group: group, model: model) }
                     }.padding(20)
-                }
+                }.id([
+                    model.preferences.fileDirectory ?? "", model.directoryImageSearch,
+                    String(model.directoryImageOffset),
+                ])
             }
             AppBottomBar {
-                Text("\(model.directoryImageTotal) 组图片").font(.caption).foregroundStyle(.secondary)
+                Text(
+                    LibraryPresentation.range(
+                        offset: model.directoryImageOffset, count: model.directoryImages.count,
+                        total: model.directoryImageTotal, unit: "组图片")
+                )
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 Text("归属未验证").font(.caption).foregroundStyle(.tertiary)
                     .help("这些是目录文件，无法仅凭文件确认发送者、收发方向或消息归属。")
                 Spacer()
-                Button {
-                    model.paginateDirectoryImages(-1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .disabled(model.directoryImageOffset == 0).help("上一页").accessibilityLabel("上一页")
-                Button {
-                    model.paginateDirectoryImages(1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(model.directoryImageOffset + model.directoryImages.count >= model.directoryImageTotal)
-                .help("下一页").accessibilityLabel("下一页")
+                LibraryPageControls(
+                    offset: model.directoryImageOffset, count: model.directoryImages.count,
+                    total: model.directoryImageTotal, isLoading: model.directoryImagesLoading,
+                    previous: { model.paginateDirectoryImages(-1) }, next: { model.paginateDirectoryImages(1) })
             }
         }.background(.background)
     }
@@ -65,7 +74,7 @@ struct DirectoryImageCard: View {
                 if let preview = item.preview, preview.state == "ready" { model.selectedImage = preview }
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor))
+                    RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .windowBackgroundColor))
                     if let image {
                         Image(nsImage: image).resizable().interpolation(.high).scaledToFit().padding(4)
                     } else if isLoading {
@@ -80,9 +89,11 @@ struct DirectoryImageCard: View {
                 }.frame(height: 160)
             }
             .buttonStyle(.plain).disabled(item.preview?.state != "ready")
-            .help("查看大图").accessibilityLabel("查看图片 \(item.file.name)")
-            Text(item.file.name).font(.caption).lineLimit(1).textSelection(.enabled)
-            Text((Dates.parse(item.file.modifiedAt) ?? .distantPast).formatted(date: .abbreviated, time: .shortened))
+            .help(item.preview?.state == "ready" ? "查看大图" : item.preview?.label ?? "预览将在扫描后生成")
+            .accessibilityLabel("查看图片 \(item.file.name)")
+            Text(item.file.name).font(.caption).lineLimit(1).truncationMode(.middle).textSelection(.enabled).help(
+                item.file.name)
+            Text(LibraryPresentation.date(item.file.modifiedAt, abbreviated: true))
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
 
         }
@@ -94,7 +105,7 @@ struct DirectoryImageCard: View {
         .task(id: (item.preview?.token ?? "") + (item.preview?.state ?? "")) {
             image = nil
             isLoading = true
-            guard let preview = item.preview else {
+            guard let preview = item.preview, preview.state == "ready" else {
                 isLoading = false
                 return
             }

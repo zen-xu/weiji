@@ -32,7 +32,8 @@ struct ListenerView: View {
     @ViewBuilder private var searchableContent: some View {
         switch model.page {
         case .archive, .files, .images:
-            pageContent.searchable(text: searchBinding, placement: .toolbar, prompt: searchPrompt)
+            pageContent.searchable(
+                text: searchBinding, isPresented: $model.searchPresented, placement: .toolbar, prompt: searchPrompt)
         default: pageContent
         }
     }

@@ -12,11 +12,10 @@ struct StartupView: View {
                 VStack(spacing: 16) {
                     ProgressView().controlSize(.large)
                     Text("正在检查通知访问权限…").font(.headline)
-                    Text("检查完成后继续设置。").font(.callout).foregroundStyle(.secondary)
+                    Text("确认应用可以读取系统通知。").font(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             case .accessRequired(let access):
-                accessContent(access)
-                Spacer(minLength: 16)
+                ScrollView { accessContent(access).frame(maxWidth: .infinity, alignment: .leading) }
                 Divider()
                 HStack {
                     Button("退出") { NSApp.terminate(nil) }
@@ -28,8 +27,7 @@ struct StartupView: View {
                     }
                 }.padding(.top, 20)
             case .configuration:
-                configuration
-                Spacer(minLength: 16)
+                ScrollView { configuration.frame(maxWidth: .infinity, alignment: .leading) }
                 Divider()
                 HStack {
                     Text("稍后可在设置中更改。").font(.caption).foregroundStyle(.secondary)
@@ -74,7 +72,7 @@ struct StartupView: View {
                 Text("选择微信账号目录，可浏览本机文件和图片。").foregroundStyle(.secondary)
                 if let directory = model.preferences.fileDirectory {
                     Label(URL(fileURLWithPath: directory).lastPathComponent, systemImage: "folder")
-                        .lineLimit(1).help(directory)
+                        .lineLimit(1).truncationMode(.middle).help(directory)
                 }
                 Button(model.preferences.fileDirectory == nil ? "选择目录…" : "更换目录…", action: model.chooseStartupDirectory)
                 Text("也可以进入应用后再选择。").font(.caption).foregroundStyle(.secondary)

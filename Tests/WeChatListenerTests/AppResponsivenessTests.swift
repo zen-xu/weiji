@@ -24,6 +24,21 @@ private func eventually(_ condition: @MainActor () -> Bool) async throws {
     throw ListenerError("Synthetic GUI operation timed out")
 }
 
+@Test("Moving the custom range start past its end retains that day's notifications")
+@MainActor
+func guiCustomDateRangeRemainsValid() async throws {
+    let root = try TestSupport.makeDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(paths: try responsivenessFixture(root), allowNotificationCapture: false)
+    defer { model.shutDown() }
+    model.toDate = TestSupport.referenceDate.addingTimeInterval(-86_400)
+    model.fromDate = TestSupport.referenceDate
+    model.dateScope = .custom
+    try await eventually { !model.loading }
+    #expect(model.toDate == model.fromDate)
+    #expect(model.total == 2)
+}
+
 @Test("GUI queries remain responsive while the writer is busy scanning")
 @MainActor
 func guiReadsBypassScanning() async throws {

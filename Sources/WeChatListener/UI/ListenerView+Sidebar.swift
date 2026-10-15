@@ -21,12 +21,13 @@ extension ListenerView {
                                 conversation.displayName,
                                 systemImage: conversation.showsGroupIcon ? "person.2" : "bubble.left"
                             )
-                            .lineLimit(1)
+                            .lineLimit(1).truncationMode(.middle)
                             Spacer(minLength: 0)
                             Text(conversation.count.formatted()).font(.caption.monospacedDigit()).foregroundStyle(
                                 .secondary)
                         }
                         .help(conversation.kindLabel + " · " + conversation.displayName)
+                        .accessibilityElement(children: .combine)
                         .tag(SidebarSelection.conversation(conversation.id))
                     }
                     if model.conversations.isEmpty {
@@ -36,9 +37,17 @@ extension ListenerView {
             }
             .listStyle(.sidebar)
             AppBottomBar(horizontalPadding: 12) {
-                Image(systemName: model.isCollecting ? "record.circle" : "pause.circle")
-                    .foregroundStyle(model.isCollecting ? AppAppearance.accent : Color.secondary)
-                Text(model.isCollecting ? "正在采集" : "采集已暂停").font(.caption).foregroundStyle(.secondary)
+                Image(
+                    systemName: model.statusText == "通知读取受阻"
+                        ? "exclamationmark.circle" : model.isCollecting ? "record.circle" : "pause.circle"
+                )
+                .foregroundStyle(
+                    model.statusText == "通知读取受阻"
+                        ? Color.orange : model.isCollecting ? AppAppearance.accent : Color.secondary
+                )
+                .accessibilityHidden(true)
+                Text(model.statusText == "通知读取受阻" ? "通知读取受阻" : model.isCollecting ? "正在采集" : "采集已暂停")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).help(model.statusText)
                 Spacer(minLength: 0)
                 Button(action: model.openSettings) { Image(systemName: "gearshape") }
                     .buttonStyle(.borderless).help("设置…（⌘,）").accessibilityLabel("设置")

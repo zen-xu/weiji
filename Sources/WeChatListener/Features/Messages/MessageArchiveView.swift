@@ -17,7 +17,7 @@ struct MessageArchiveView: View {
                             .help("缺少可靠的会话标识，同名联系人可能出现在同一分组中。")
                     }
                     Spacer()
-                    if model.loading { ProgressView().controlSize(.small) }
+                    if model.loading { ProgressView().controlSize(.small).accessibilityLabel("正在读取通知") }
                     Button {
                         showingCoverage.toggle()
                     } label: {
@@ -40,7 +40,7 @@ struct MessageArchiveView: View {
                 }
             }.controlSize(.small).padding(.horizontal, 20).padding(.vertical, 10)
             Divider()
-            if model.loading && model.stats == nil {
+            if model.loading && messages.isEmpty {
                 ProgressView("正在打开本地档案…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if messages.isEmpty {
                 ContentUnavailableView {
@@ -50,7 +50,12 @@ struct MessageArchiveView: View {
                 } description: {
                     Text(model.stats?.messages == 0 ? "开始采集后，收到的微信通知会保存在这里。" : "试试其他关键词或时间范围。")
                 } actions: {
-                    if model.stats?.messages == 0 {
+                    if !model.search.isEmpty || model.dateScope != .all {
+                        Button("清除筛选") {
+                            model.search = ""
+                            model.dateScope = .all
+                        }
+                    } else if model.stats?.messages == 0 {
                         Button("查看采集状态") { model.page = .overview }
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -72,31 +77,29 @@ struct MessageArchiveView: View {
                         }
                     }.frame(maxWidth: 880, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 20)
                         .frame(maxWidth: .infinity)
-                }.id(model.selectedID ?? "all-notifications")
+                }.id(scrollPosition)
             }
             AppBottomBar {
                 Text(
-                    model.total == 0
-                        ? "0 条通知" : "\(model.offset + 1)–\(model.offset + messages.count) / \(model.total) 条通知"
+                    LibraryPresentation.range(
+                        offset: model.offset, count: messages.count, total: model.total, unit: "条通知")
                 )
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 Text("仅系统通知").font(.caption).foregroundStyle(.tertiary).help(NotificationCoverage.notice)
                 Spacer()
-                Button {
-                    model.paginate(-1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .disabled(model.offset == 0 || model.loading).help("上一页").accessibilityLabel("上一页")
-                Button {
-                    model.paginate(1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(model.offset + messages.count >= model.total || model.loading).help("下一页").accessibilityLabel(
-                    "下一页")
+                LibraryPageControls(
+                    offset: model.offset, count: messages.count, total: model.total, isLoading: model.loading,
+                    previous: { model.paginate(-1) }, next: { model.paginate(1) })
             }
         }.background(.background)
+    }
+
+    private var scrollPosition: [String] {
+        [
+            model.selectedID ?? "", String(model.offset), model.search, model.dateScope.rawValue,
+            model.dateScope == .custom ? Dates.string(model.fromDate) : "",
+            model.dateScope == .custom ? Dates.string(model.toDate) : "",
+        ]
     }
 
     private func dayTitle(_ date: Date) -> String {
