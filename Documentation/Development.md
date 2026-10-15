@@ -12,6 +12,7 @@ Sources/
     App/                          应用入口、生命周期、状态和本机设置
     CLI/                          命令行参数与 JSON 输出
     Features/
+      Onboarding/                 通知访问探测、启动状态与首次设置
       Notifications/              通知解码、采集与状态页面
       Messages/                   消息展示与档案页面
       Files/                      普通文件发现、索引与页面
@@ -71,6 +72,14 @@ python3 -B Tests/Integration/test_mcp_http.py .build/debug/WeChatListener --gui
 ```
 
 原来的 App `--self-test` 入口已迁移到独立测试目标；该参数现在给出迁移提示，不会运行测试或创建档案。
+
+## 启动与权限检查
+
+`ApplicationRootView` 根据 `StartupCoordinator` 切换检查页、访问引导、首次配置和主界面。每次正常启动都先用 GUI 进程执行只读通知源探测；`NotificationAccessChecker` 检查文件头及采集依赖的 SQLite 列，不解码或导入通知，不查询 TCC 数据库。结果表示当前进程的有效读取能力，不能作为全局完全磁盘访问开关状态。权限由用户在系统设置中授予，见 [Apple 文件访问控制说明](https://support.apple.com/en-ca/guide/security/secddd1d86a6/web)。
+
+`Preferences.onboardingCompleted` 为可选字段，兼容旧设置。只有检查通过并成功保存首次配置后，才调用一次 `AppModel.startUp()`；返回用户仍须重新检查，首次配置完成标记不能跳过权限检查。应用重新激活时复查未完成的引导，点击“开始使用”前再次检查；退出取消未完成的任务。HTTP MCP 独立启动，仅查询既有档案。`--demo` 使用独立合成资料，跳过真实通知检查和首次配置。
+
+`StartupTests` 覆盖真实合成 SQLite 的只读/缺失/权限/繁忙/格式结果，以及启动门控、撤权、重复请求、保存失败、取消和旧设置迁移。运行 `bash Scripts/test.sh --filter startup --filter notificationAccessProbe`。真实系统授权后的返回与重启流程，需要解锁 Mac 后人工检查。
 
 ## 格式与代码组织
 

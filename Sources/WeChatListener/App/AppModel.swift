@@ -103,6 +103,7 @@ import UniformTypeIdentifiers
     var onStatusChange: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     let pageSize = 100
+    private(set) var hasStartedLibrary = false
 
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
         self.paths = paths
@@ -128,7 +129,8 @@ import UniformTypeIdentifiers
         return result
     }
     func startUp() {
-        startMCPServer()
+        guard !hasStartedLibrary else { return }
+        hasStartedLibrary = true
         refresh()
         refreshFiles()
         startDirectoryMonitoring()
@@ -280,7 +282,16 @@ import UniformTypeIdentifiers
         NSPasteboard.general.setString(text, forType: .string)
         feedback = "已复制到剪贴板"
     }
-    func chooseFileDirectory() {
+    func completeStartupSetup() throws {
+        try paths.prepare()
+        var updated = preferences
+        updated.onboardingCompleted = true
+        try updated.save(paths)
+        preferences = updated
+    }
+    func chooseFileDirectory() { chooseDirectory(startMonitoring: true) }
+    func chooseStartupDirectory() { chooseDirectory(startMonitoring: false) }
+    private func chooseDirectory(startMonitoring: Bool) {
         let panel = NSOpenPanel()
         panel.title = "选择微信账号目录或 msg/file 文件夹"
         panel.message = "只读探测文件，解码已关联图片并在本机缓存预览；不读取聊天数据库。"
@@ -289,12 +300,21 @@ import UniformTypeIdentifiers
         if let directory = preferences.fileDirectory { panel.directoryURL = URL(fileURLWithPath: directory) }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            preferences.fileDirectory = try FileDiscovery.directory(url).path
-            savePreferences()
-            fileOffset = 0
-            directoryImageOffset = 0
-            startDirectoryMonitoring()
-        } catch { fileScanStatus = error.localizedDescription }
+            let directory = try FileDiscovery.directory(url).path
+            if startMonitoring {
+                preferences.fileDirectory = directory
+                savePreferences()
+                fileOffset = 0
+                directoryImageOffset = 0
+                startDirectoryMonitoring()
+            } else {
+                preferences.fileDirectory = directory
+                errorText = nil
+            }
+        } catch {
+            fileScanStatus = error.localizedDescription
+            if !startMonitoring { errorText = error.localizedDescription }
+        }
     }
     func scanFiles() {
         guard let directory = preferences.fileDirectory else { return }

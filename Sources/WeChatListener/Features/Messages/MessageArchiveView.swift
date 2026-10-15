@@ -40,7 +40,9 @@ struct MessageArchiveView: View {
                 }
             }.controlSize(.small).padding(.horizontal, 20).padding(.vertical, 10)
             Divider()
-            if messages.isEmpty {
+            if model.loading && model.stats == nil {
+                ProgressView("正在打开本地档案…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if messages.isEmpty {
                 ContentUnavailableView {
                     Label(
                         model.stats?.messages == 0 ? "尚无通知" : "没有匹配的通知",

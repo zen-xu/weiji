@@ -5,26 +5,36 @@ import SwiftUI
 final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation
 {
     let model: AppModel
+    let startup: StartupCoordinator
     var window: NSWindow!
     var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
-        model = AppModel(paths: paths, allowNotificationCapture: allowNotificationCapture)
+        let model = AppModel(paths: paths, allowNotificationCapture: allowNotificationCapture)
+        self.model = model
+        let source = paths.source
+        startup = StartupCoordinator(
+            setupCompleted: model.preferences.onboardingCompleted == true,
+            demo: !allowNotificationCapture,
+            checkAccess: {
+                await Task.detached(priority: .userInitiated) { NotificationAccessChecker.check(source) }.value
+            },
+            persistCompletion: { try model.completeStartupSetup() })
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1160, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 600),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered,
             defer: false)
         window.title = "微信消息监听"
         window.titlebarAppearsTransparent = true
-        window.minSize = NSSize(width: 820, height: 580)
+        window.minSize = NSSize(width: 600, height: 600)
         window.toolbarStyle = .unified
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentViewController = NSHostingController(rootView: ListenerView(model: model))
-        window.setFrameAutosaveName("WeChatListenerMainWindow")
+        window.contentViewController = NSHostingController(
+            rootView: ApplicationRootView(model: model, startup: startup))
         window.center()
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
@@ -73,16 +83,25 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         statusItem.menu = statusMenu
         model.onStatusChange = { [weak self] in self?.statusItem.button?.toolTip = self?.model.statusText }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
+        startup.onStageChange = { [weak self] stage in
+            guard let self else { return }
+            self.statusItem.button?.toolTip = stage == .ready ? self.model.statusText : "等待完成启动设置"
+            if stage == .ready { self.configureMainWindow() }
+        }
+        startup.onReady = { [weak self] in self?.model.startUp() }
+        // Historical MCP queries remain available while first-run access is being configured.
+        model.startMCPServer()
+        startup.start()
         showWindow()
-        model.startUp()
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let status = NSMenuItem(title: model.statusText, action: nil, keyEquivalent: "")
+        let status = NSMenuItem(title: startup.isReady ? model.statusText : "等待完成启动设置", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "打开消息档案", action: #selector(showWindow), keyEquivalent: "")
+        menu.addItem(
+            withTitle: startup.isReady ? "打开消息档案" : "完成启动设置…", action: #selector(showWindow), keyEquivalent: "")
         menu.addItem(withTitle: model.isCollecting ? "暂停采集" : "开始采集", action: #selector(toggle), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出微信消息监听", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
@@ -90,11 +109,27 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             item.target = item.action == #selector(NSApplication.terminate(_:)) ? NSApp : self
         }
     }
+    private func configureMainWindow() {
+        window.styleMask.insert(.resizable)
+        window.minSize = NSSize(width: 820, height: 580)
+        if !window.setFrameUsingName("WeChatListenerMainWindow") {
+            window.setContentSize(NSSize(width: 1160, height: 800))
+            window.center()
+        }
+        window.setFrameAutosaveName("WeChatListenerMainWindow")
+    }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        if !startup.isReady { startup.recheck() }
+    }
     @objc func showWindow() {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
     @objc func showSettings() {
+        guard startup.isReady else {
+            showWindow()
+            return
+        }
         if settingsWindow == nil {
             let settings = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
@@ -112,16 +147,25 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if let action = item.action,
-            [#selector(importNotifications), #selector(exportJSONL), #selector(exportMarkdown)].contains(action)
+            [
+                #selector(importNotifications), #selector(exportJSONL), #selector(exportMarkdown), #selector(toggle),
+                #selector(showSettings),
+            ].contains(action)
         {
-            return !model.isWorking
+            return startup.isReady && !model.isWorking
         }
         return true
     }
     @objc func importNotifications() { model.importArchive() }
     @objc func exportJSONL() { model.exportArchive(markdown: false) }
     @objc func exportMarkdown() { model.exportArchive(markdown: true) }
-    @objc func toggle() { model.toggleCollection() }
+    @objc func toggle() {
+        guard startup.isReady else {
+            showWindow()
+            return
+        }
+        model.toggleCollection()
+    }
     @objc func about() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "微信消息监听", .applicationVersion: ApplicationInfo.version,
@@ -137,9 +181,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         return true
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        startup.cancel()
+        model.stopMCPServer()
+        guard model.hasStartedLibrary else { return .terminateNow }
         model.stop()
         model.stopDirectoryMonitoring()
-        model.stopMCPServer()
         model.worker.perform {
             try $0.flushJournal()
         } completion: { _ in
