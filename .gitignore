@@ -22,3 +22,11 @@ __pycache__/
 /ImagePreviews/
 /Exports/
 /Logs/
+
+# Local code-signing identity and private material
+/.local-signing/
+*.keychain
+*.keychain-db
+*.p12
+*.pfx
+*.key

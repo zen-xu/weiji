@@ -3,6 +3,7 @@ set -euo pipefail
 TASK_ROOT="$(cd "$(dirname "$0")" && pwd)"
 TASK_ARCH="$(uname -m)"
 TASK_APP="$TASK_ROOT/dist/微信消息监听.app"
+python3 "$TASK_ROOT/Scripts/sign_app.py" --check
 mkdir -p "$TASK_ROOT/build/module-cache" "$TASK_APP/Contents/MacOS" "$TASK_APP/Contents/Resources"
 swiftc -O -swift-version 5 -target "$TASK_ARCH-apple-macos14.0" \
   -module-cache-path "$TASK_ROOT/build/module-cache" \
@@ -11,7 +12,6 @@ swiftc -O -swift-version 5 -target "$TASK_ARCH-apple-macos14.0" \
   -o "$TASK_APP/Contents/MacOS/WeChatListener"
 cp "$TASK_ROOT/Resources/AppIcon.icns" "$TASK_APP/Contents/Resources/AppIcon.icns"
 cp "$TASK_ROOT/Resources/Info.plist" "$TASK_APP/Contents/Info.plist"
-codesign --force --sign - "$TASK_APP"
-codesign --verify --strict --verbose=2 "$TASK_APP"
+python3 "$TASK_ROOT/Scripts/sign_app.py" "$TASK_APP"
 "$TASK_APP/Contents/MacOS/WeChatListener" --self-test
 printf '已构建并验证：%s\n' "$TASK_APP"

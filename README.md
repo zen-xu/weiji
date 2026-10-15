@@ -11,6 +11,8 @@
 3. 授权后退出应用并重新打开，再点击“开始采集”。连续采集默认暂停；每次打开应用仍会补扫一次系统保留的历史通知。
 4. 让微信在后台收到一条有正文的系统通知，检查档案是否新增记录。
 
+从旧版临时签名切换到固定证书签名时，需要重新添加一次完全磁盘访问授权。之后的构建复用同一证书及 Bundle ID，避免身份随二进制变化。配置方法和验证边界见 [SIGNING.md](SIGNING.md)。
+
 关闭窗口后应用会留在菜单栏运行。“暂停通知采集”只停止读取通知；目录监听继续工作，菜单栏“退出”会停止整个应用。应用不会自动安装登录启动项；设置中的“打开应用后自动开始采集通知”只影响应用启动后的行为。
 
 “所有通知”支持关键词和日期筛选、100 条一页的浏览、按会话查看、复制正文和结构化 JSON。“…”菜单支持导入旧 JSONL、导出当前筛选和数据库备份。设置里可以清空本地档案；不修改微信或系统通知，也不删除导出/备份文件。
@@ -141,11 +143,17 @@ APP='/你的路径/微信消息监听.app/Contents/MacOS/WeChatListener'
 需要 macOS 14+ 和 Apple Command Line Tools（`xcode-select --install`）。在项目目录运行：
 
 ```bash
+# 首次本机配置：此命令创建持久签名私钥，并添加用户级代码签名信任
+python3 Scripts/setup_signing.py --confirm-local-trust
 bash build.sh
 python3 Tests/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeChatListener'
+python3 Tests/test_signing_config.py
+python3 Tests/test_signing_identity.py
 ```
 
-编译只依赖系统 SDK。应用使用本机 ad-hoc 签名并执行严格签名校验，**不是 Developer ID 签名/Apple 公证的公开发行版**。164 项检查及 MCP 独立进程测试只使用临时目录里的合成数据，不读取真实通知，也不联网。演示模式不会启动真实通知采集。
+构建使用系统 SDK、Python 3 和钥匙串中的固定签名身份；应用运行没有 Python 依赖。默认从忽略的 `.local-signing/identity.json` 读取已固定的证书指纹，配置缺失或证书不可用时构建会停止。也可通过 `CODE_SIGN_IDENTITY` 和可选的 `CODE_SIGN_KEYCHAIN` 选择已有身份。仅临时测试可用 `CODE_SIGN_IDENTITY=- bash build.sh`，这类构建更新后可能丢失旧授权。
+
+本机自签名身份**不等于 Developer ID 签名或 Apple 公证**。构建执行严格签名校验；164 项 Swift 检查、MCP 独立进程和签名身份测试只使用临时目录里的合成数据，不读取真实通知，也不联网。演示模式不会启动真实通知采集。
 
 性能基准可运行 `python3 Tests/benchmark_performance.py`：自动编译测试程序，在临时目录生成 10,000 个合成图片文件和 1,000 个文档，测量首次索引、无变化重扫和图片分页查询，完成后删除测试数据。结果和测量边界见 [PERFORMANCE.md](PERFORMANCE.md)。
 
