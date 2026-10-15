@@ -10,13 +10,22 @@ final class MCPHTTPServer {
         case failed(String)
     }
 
-    private let paths: AppPaths
     private let queue = DispatchQueue(label: "local.xzy.WeChatListener.mcp-http", qos: .utility)
+    private let queries: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "local.xzy.WeChatListener.mcp-queries"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 4
+        return queue
+    }()
+    private let respond: (MCPHTTPRequest, UInt16) -> MCPHTTPResponse
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
     private var stateChanged: ((State) -> Void)?
 
-    init(paths: AppPaths) { self.paths = paths }
+    init(paths: AppPaths, responder: ((MCPHTTPRequest, UInt16) -> MCPHTTPResponse)? = nil) {
+        respond = responder ?? { MCPHTTPHandler(paths: paths, port: $1).response(to: $0) }
+    }
 
     /// All listener and connection state is confined to the transport queue.
     func start(port: UInt16, stateChanged: @escaping (State) -> Void) {
@@ -65,6 +74,7 @@ final class MCPHTTPServer {
     }
 
     private func stopOnQueue() {
+        queries.cancelAllOperations()
         listener?.cancel()
         listener = nil
         for connection in connections.values { connection.cancel() }
@@ -105,8 +115,7 @@ final class MCPHTTPServer {
                     throw MCPHTTPError(status: 413)
                 }
                 if let request = try MCPHTTPRequest.parse(buffer) {
-                    let response = MCPHTTPHandler(paths: self.paths, port: port).response(to: request)
-                    self.finish(connection, id: id, response: response)
+                    self.execute(request, connection: connection, id: id, port: port)
                 } else if complete || error != nil {
                     self.finish(connection, id: id, response: MCPHTTPResponse(status: 400))
                 } else {
@@ -117,6 +126,22 @@ final class MCPHTTPServer {
                     connection, id: id, response: MCPHTTPResponse(status: (error as? MCPHTTPError)?.status ?? 400))
             }
         }
+    }
+
+    private func execute(_ request: MCPHTTPRequest, connection: NWConnection, id: UUID, port: UInt16) {
+        let operation = BlockOperation()
+        operation.addExecutionBlock { [weak self, weak operation, weak connection] in
+            guard let self, let operation, !operation.isCancelled, let connection,
+                self.queue.sync(execute: { self.connections[id] != nil })
+            else { return }
+            let response = autoreleasepool { self.respond(request, port) }
+            self.queue.async {
+                // Stopped listeners and timed-out clients must never receive a late result.
+                guard !operation.isCancelled, self.connections[id] != nil else { return }
+                self.finish(connection, id: id, response: response)
+            }
+        }
+        queries.addOperation(operation)
     }
 
     private func finish(_ connection: NWConnection, id: UUID, response: MCPHTTPResponse) {

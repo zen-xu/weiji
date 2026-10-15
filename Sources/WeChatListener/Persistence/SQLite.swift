@@ -80,6 +80,19 @@ final class SQLite {
             throw error
         }
     }
+    /// A request sees one WAL snapshot; nested readers reuse their caller's transaction.
+    func readSnapshot<T>(_ action: () throws -> T) throws -> T {
+        guard sqlite3_get_autocommit(handle) != 0 else { return try action() }
+        try run("BEGIN")
+        do {
+            let value = try action()
+            try run("COMMIT")
+            return value
+        } catch {
+            try? run("ROLLBACK")
+            throw error
+        }
+    }
     func backup(to url: URL) throws {
         guard !FileManager.default.fileExists(atPath: url.path) else { throw ListenerError("备份目标已存在，请使用新文件名。") }
         let target = try SQLite(url.path)

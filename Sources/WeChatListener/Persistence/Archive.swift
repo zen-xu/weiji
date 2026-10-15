@@ -25,12 +25,14 @@ final class Archive {
                 throw ListenerError("档案尚未建立，请先打开\(ApplicationInfo.name)应用。")
             }
             archiveID = id
-            hasFTS = !(try database.rows("SELECT name FROM sqlite_master WHERE name='messages_fts'")).isEmpty
-            hasFileCatalog = !(try database.rows("SELECT name FROM sqlite_master WHERE name='discovered_files'"))
-                .isEmpty
-            hasImageCatalog = !(try database.rows("SELECT name FROM sqlite_master WHERE name='image_files'")).isEmpty
-            hasPreviewCatalog = !(try database.rows("SELECT name FROM sqlite_master WHERE name='image_previews'"))
-                .isEmpty
+            let tables = Set(
+                try database.rows(
+                    "SELECT name FROM sqlite_master WHERE name IN ('messages_fts','discovered_files','image_files','image_previews')"
+                ).compactMap { $0.string("name") })
+            hasFTS = tables.contains("messages_fts")
+            hasFileCatalog = tables.contains("discovered_files")
+            hasImageCatalog = tables.contains("image_files")
+            hasPreviewCatalog = tables.contains("image_previews")
             return
         }
         try database.run("PRAGMA journal_mode=WAL")
@@ -48,6 +50,7 @@ final class Archive {
             """)
         try database.run(
             "CREATE INDEX IF NOT EXISTS messages_conversation_date ON messages(conversation_id, sort_at DESC, id)")
+        try database.run("CREATE INDEX IF NOT EXISTS messages_context ON messages(conversation_id, sort_at, id)")
         try database.run("CREATE INDEX IF NOT EXISTS messages_date ON messages(sort_at DESC, id)")
         try database.run("CREATE INDEX IF NOT EXISTS messages_source ON messages(source_key)")
         try database.run(
@@ -229,15 +232,32 @@ final class Archive {
         let (clause, args) = whereClause(filter)
         return Int(try database.rows("SELECT COUNT(*) AS n FROM messages WHERE \(clause)", args).first?.int("n") ?? 0)
     }
-    func conversations(query: String = "") throws -> [Conversation] {
+    private static let conversationSelection = """
+        WITH grouped AS (
+          SELECT conversation_id, COUNT(*) AS n, MAX(sort_at) AS last_at FROM messages GROUP BY conversation_id
+        ) SELECT m.*, g.n FROM grouped g JOIN messages m ON m.id=(
+          SELECT id FROM messages WHERE conversation_id=g.conversation_id AND sort_at=g.last_at ORDER BY id LIMIT 1
+        ) WHERE (?='' OR instr(lower(m.name),lower(?))>0)
+        """
+
+    func conversationCount(query: String = "") throws -> Int {
+        if query.isEmpty {
+            return Int(
+                try database.rows("SELECT COUNT(DISTINCT conversation_id) AS n FROM messages").first?.int("n") ?? 0)
+        }
+        return Int(
+            try database.rows(
+                "SELECT COUNT(*) AS n FROM (\(Self.conversationSelection))", [.text(query), .text(query)]
+            ).first?.int("n") ?? 0)
+    }
+
+    func conversations(query: String = "", limit: Int? = nil, offset: Int = 0) throws -> [Conversation] {
         try database.rows(
-            """
-            WITH ranked AS (
-              SELECT *, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY sort_at DESC,id) AS rank,
-              COUNT(*) OVER(PARTITION BY conversation_id) AS n FROM messages
-            ) SELECT * FROM ranked WHERE rank=1 AND (?='' OR instr(lower(name),lower(?))>0)
-            ORDER BY sort_at DESC,id
-            """, [.text(query), .text(query)]
+            Self.conversationSelection + " ORDER BY m.sort_at DESC,m.id LIMIT ? OFFSET ?",
+            [
+                .text(query), .text(query), .integer(Int64(limit.map { max(1, $0) } ?? -1)),
+                .integer(Int64(max(0, offset))),
+            ]
         ).map {
             let message = $0.data("payload").flatMap { try? JSONDecoder().decode(Message.self, from: $0) }
             let presentation = message?.presentation
@@ -465,17 +485,26 @@ final class Archive {
     }
 
     func context(messageID: String, radius: Int) throws -> [Message] {
-        let rows = try database.rows(
-            """
-            WITH ranked AS (
-              SELECT payload,id, ROW_NUMBER() OVER(ORDER BY sort_at,id) AS n FROM messages
-              WHERE conversation_id=(SELECT conversation_id FROM messages WHERE id=?)
-            ) SELECT payload FROM ranked WHERE n BETWEEN
-              (SELECT n FROM ranked WHERE id=?)-? AND (SELECT n FROM ranked WHERE id=?)+? ORDER BY n
-            """,
-            [.text(messageID), .text(messageID), .integer(Int64(radius)), .text(messageID), .integer(Int64(radius))])
-        guard !rows.isEmpty else { throw ListenerError("未找到该消息。") }
-        return try rows.map { try JSONDecoder().decode(Message.self, from: $0.data("payload")!) }
+        try database.readSnapshot {
+            guard
+                let anchor = try database.rows(
+                    "SELECT payload,conversation_id,sort_at,id FROM messages WHERE id=?", [.text(messageID)]
+                ).first
+            else { throw ListenerError("未找到该消息。") }
+            let args: [SQLValue] = [
+                .text(anchor.string("conversation_id")!), .text(anchor.string("sort_at")!),
+                .text(messageID), .integer(Int64(max(0, min(radius, 20)))),
+            ]
+            let before = try database.rows(
+                "SELECT payload FROM messages WHERE conversation_id=? AND (sort_at,id)<(?,?) ORDER BY sort_at DESC,id DESC LIMIT ?",
+                args)
+            let after = try database.rows(
+                "SELECT payload FROM messages WHERE conversation_id=? AND (sort_at,id)>(?,?) ORDER BY sort_at,id LIMIT ?",
+                args)
+            return try (Array(before.reversed()) + [anchor] + after).map {
+                try JSONDecoder().decode(Message.self, from: $0.data("payload")!)
+            }
+        }
     }
     func clear() throws {
         try database.transaction {

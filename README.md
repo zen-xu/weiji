@@ -88,6 +88,8 @@ codex mcp add wechat-listener --url http://127.0.0.1:18765/mcp
 
 服务只绑定 IPv4 回环地址 `127.0.0.1`，不开放局域网访问；校验 Host，拒绝带 Origin 的浏览器请求。默认无需 Token，同一台 Mac 上的其他程序也能访问此只读服务。请求体最多 1 MiB，头部最多 16 KiB，最多 32 个连接，连接超时 15 秒；使用无会话的 JSON 响应，不提供 SSE 推送。档案仅以 `SQLITE_OPEN_READONLY` 查询，MCP 不读取系统通知数据库。
 
+1.7.0 起，HTTP 查询使用最多 4 个并发工作任务。AI 探索时推荐 `detail=compact, limit=20, include_total=false`，再按消息 ID 获取单条完整详情；返回 `next_offset` 指示翻页，错误提供原因与下一步操作。默认完整结果保持兼容，具体调用示例见 [MCP 查询指南](Documentation/MCP.md)。
+
 需要独立运行服务时可用 `WeChatListener mcp-http --port 18765`；旧的 `WeChatListener mcp` stdio 接口仍可用。两种接口提供相同的只读工具。
 
 提供六个工具：

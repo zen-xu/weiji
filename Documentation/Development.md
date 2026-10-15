@@ -65,11 +65,14 @@ WECHAT_RUN_BENCHMARKS=1 bash Scripts/test.sh -c release --filter catalogPerforma
 HTTP 实现使用系统 `Network.framework`，无第三方 HTTP 运行时依赖。`MCPHTTPRequest` / `MCPHTTPHandler` 负责有界 HTTP 报文及协议检查，`MCPHTTPServer` 在独立串行队列管理监听器和连接；应用启动时自动开启，退出时停止，端口保存在现有 Preferences 中。`mcp-http --port N --data-dir 目录` 可独立验证服务。修改传输时执行：
 
 ```bash
+python3 -B Tests/Integration/test_mcp_queries.py .build/debug/WeChatListener
 python3 -B Tests/Integration/test_mcp_http.py .build/debug/WeChatListener
 python3 -B Tests/Integration/test_mcp_stdio.py .build/debug/WeChatListener --http
 # 可选：启动合成演示界面，确认 GUI 启动即提供服务
 python3 -B Tests/Integration/test_mcp_http.py .build/debug/WeChatListener --gui
 ```
+
+查询由最多 4 个并发工作任务执行，与网络状态队列分离。SQL 分页、读取快照、精简结果和 AI 查询约定见 [MCP.md](MCP.md)。查询基准可单独执行 `WECHAT_RUN_BENCHMARKS=1 bash Scripts/test.sh -c release --filter mcpQueryPerformance`，使用 12,000 条合成通知，不读取真实档案。
 
 原来的 App `--self-test` 入口已迁移到独立测试目标；该参数现在给出迁移提示，不会运行测试或创建档案。
 

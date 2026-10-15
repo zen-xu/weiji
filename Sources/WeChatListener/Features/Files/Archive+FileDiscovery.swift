@@ -137,7 +137,7 @@ extension Archive {
         let (clause, args) = try fileFilter(query, name: name)
         return try database.rows(
             "SELECT * FROM discovered_files WHERE \(clause) ORDER BY modified_at DESC,id LIMIT ? OFFSET ?",
-            args + [.integer(Int64(max(1, min(limit, 200)))), .integer(Int64(max(0, offset)))]
+            args + [.integer(Int64(max(1, min(limit, 201)))), .integer(Int64(max(0, offset)))]
         ).map { row in
             DiscoveredFile(
                 id: row.string("id")!, root: row.string("root")!, relativePath: row.string("relative_path")!,
