@@ -186,9 +186,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         startup.cancel()
         model.stopMCPServer()
+        model.shutDown()
         guard model.hasStartedLibrary else { return .terminateNow }
-        model.stop()
-        model.stopDirectoryMonitoring()
         model.worker.perform {
             try $0.flushJournal()
         } completion: { _ in

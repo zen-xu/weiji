@@ -23,9 +23,10 @@ extension ListenerView {
                 }.menuIndicator(.hidden).disabled(model.isWorking)
             case .files, .images:
                 Button(action: model.chooseFileDirectory) { Label("选择目录…", systemImage: "folder.badge.plus") }
-                    .help("选择微信账号目录")
+                    .help("选择微信账号目录").disabled(model.isWorking)
                 Button(action: model.scanFiles) { Label("扫描目录", systemImage: "arrow.clockwise") }
-                    .help("立即扫描目录").disabled(model.fileScanBusy || model.preferences.fileDirectory == nil)
+                    .help("立即扫描目录").disabled(
+                        model.isWorking || model.fileScanBusy || model.preferences.fileDirectory == nil)
             default: EmptyView()
             }
         }

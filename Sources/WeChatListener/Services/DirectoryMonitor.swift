@@ -36,7 +36,8 @@ final class DirectoryMonitor {
         }
     }
     func isMediaPath(_ path: String) -> Bool {
-        Self.isMediaPath(URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path, root: root.path)
+        // FSEvents supplies paths under the already-canonical watch root. Filtering must not do disk I/O on main.
+        Self.isMediaPath(path, root: root.path)
     }
     static func isMediaPath(_ path: String, root: String) -> Bool {
         path == root || [root + "/file", root + "/attach"].contains { path == $0 || path.hasPrefix($0 + "/") }

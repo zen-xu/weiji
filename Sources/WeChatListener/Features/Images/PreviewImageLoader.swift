@@ -4,6 +4,10 @@ import SwiftUI
 
 /// Read and decompress cached previews away from SwiftUI's main actor. The cache has a fixed memory budget.
 enum PreviewImageLoader {
+    static func clearCache() {
+        cache.removeAllObjects()
+        queue.async { cache.removeAllObjects() }
+    }
     private static let queue = DispatchQueue(label: "local.wechat-listener.preview-display", qos: .userInitiated)
     private static let cache: NSCache<NSString, CGImage> = {
         let cache = NSCache<NSString, CGImage>()

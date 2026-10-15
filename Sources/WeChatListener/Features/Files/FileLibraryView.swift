@@ -7,7 +7,9 @@ struct FileLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             DirectoryStatusBar(model: model)
-            if model.files.isEmpty {
+            if model.filesLoading && model.files.isEmpty {
+                ProgressView("正在读取本地文件索引…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.files.isEmpty {
                 ContentUnavailableView {
                     Label(model.preferences.fileDirectory == nil ? "选择微信账号目录" : "没有匹配的文件", systemImage: "folder")
                 } description: {

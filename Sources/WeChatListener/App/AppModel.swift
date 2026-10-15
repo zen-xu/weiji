@@ -5,8 +5,13 @@ import UniformTypeIdentifiers
 @MainActor final class AppModel: ObservableObject {
     let paths: AppPaths
     let worker: LibraryWorker
+    let reader: LibraryWorker
     let imageReader: LibraryWorker
     private var preparingVisibleImages = false
+    private lazy var previewPreparation = PreviewPreparation(worker: worker)
+    private var directoryWork = BackgroundWorkToken()
+    private var captureWork = BackgroundWorkToken()
+    private(set) var isShuttingDown = false
     let allowNotificationCapture: Bool
     @Published var page: Page = .archive
     @Published var conversations: [Conversation] = []
@@ -32,6 +37,8 @@ import UniformTypeIdentifiers
     private var directoryMonitorRevision = 0
     private var directoryTimer: Timer?
     private var scheduledDirectoryScan: DispatchWorkItem?
+    private var scheduledDirectorySince: TimeInterval?
+    private var scheduledDirectoryID: UUID?
     private var fileRescanPending = false
     @Published var fileSearch = "" {
         didSet {
@@ -41,6 +48,7 @@ import UniformTypeIdentifiers
     }
     @Published var fileOffset = 0
     @Published var fileTotal = 0
+    @Published var filesLoading = false
     @Published var fileScanBusy = false
     @Published var fileScanStatus = "尚未选择微信文件目录"
     private var fileRevision = 0
@@ -96,6 +104,9 @@ import UniformTypeIdentifiers
     private var timer: Timer?
     private var revision = 0
     private var pendingRefresh: DispatchWorkItem?
+    private var lastRuntimeSignature: String?
+    private var lastRuntimeWrite: TimeInterval = 0
+    private var lastRuntimeWallWrite = Date.distantPast
     @Published var mcpStatus = "服务尚未启动"
     @Published var mcpListening = false
     @Published var mcpPortText = String(MCPHTTPServer.defaultPort)
@@ -109,6 +120,7 @@ import UniformTypeIdentifiers
         self.paths = paths
         self.allowNotificationCapture = allowNotificationCapture
         worker = LibraryWorker(paths: paths)
+        reader = LibraryWorker(paths: paths, readOnly: true)
         imageReader = LibraryWorker(paths: paths, readOnly: true)
         preferences = Preferences.load(paths)
         mcpPortText = String(preferences.mcpPort ?? MCPHTTPServer.defaultPort)
@@ -129,42 +141,67 @@ import UniformTypeIdentifiers
         return result
     }
     func startUp() {
-        guard !hasStartedLibrary else { return }
+        guard !hasStartedLibrary, !isShuttingDown else { return }
         hasStartedLibrary = true
-        refresh()
-        refreshFiles()
-        startDirectoryMonitoring()
-        if allowNotificationCapture {
-            if preferences.collectOnLaunch { start() } else { poll(oneShot: true) }
+        loading = true
+        filesLoading = true
+        // Establish a new archive before any read-only connection tries to open it.
+        worker.perform { _ in
+            ()
+        } completion: { [weak self] result in
+            guard let self, !self.isShuttingDown else { return }
+            switch result {
+            case .success:
+                self.refresh()
+                self.refreshFiles()
+                if self.page == .images { self.refreshDirectoryImages() }
+                self.startDirectoryMonitoring()
+                if self.allowNotificationCapture {
+                    if self.preferences.collectOnLaunch { self.start() } else { self.poll(oneShot: true) }
+                }
+            case .failure(let error):
+                self.loading = false
+                self.filesLoading = false
+                self.errorText = error.localizedDescription
+            }
         }
     }
     func scheduleRefresh() {
+        guard !isShuttingDown else { return }
+        revision += 1
+        reader.invalidate(.messages)
+        loading = true
         pendingRefresh?.cancel()
         let item = DispatchWorkItem { [weak self] in self?.refresh() }
         pendingRefresh = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: item)
     }
     func refresh() {
+        guard !isShuttingDown else { return }
+        pendingRefresh?.cancel()
+        pendingRefresh = nil
         revision += 1
         let token = revision
         let filter = self.filter
         loading = true
-        worker.perform { archive in
-            let messages = try archive.messages(filter)
-            var links = [String: [DiscoveredFile]]()
-            var images = [String: [ImageAssociation]]()
-            for message in messages {
-                if let name = message.notifiedFileName {
-                    links[message.id] = try archive.discoveredFiles(name: name, limit: 20)
+        reader.performLatest(.messages) { archive in
+            try archive.database.readSnapshot {
+                let messages = try archive.messages(filter)
+                var links = [String: [DiscoveredFile]]()
+                var images = [String: [ImageAssociation]]()
+                for message in messages {
+                    if let name = message.notifiedFileName {
+                        links[message.id] = try archive.discoveredFiles(name: name, limit: 20)
+                    }
+                    if message.deliveredAt != nil && message.mediaDirectoryID != nil {
+                        images[message.id] = try archive.imageAssociations(for: message)
+                    }
                 }
-                if message.deliveredAt != nil && message.mediaDirectoryID != nil {
-                    images[message.id] = try archive.imageAssociations(for: message)
-                }
+                return (
+                    conversations: try archive.conversations(), messages: messages, total: try archive.count(filter),
+                    stats: try archive.stats(), hasFTS: archive.hasFTS, fileCandidates: links, imageAssociations: images
+                )
             }
-            return (
-                conversations: try archive.conversations(), messages: messages, total: try archive.count(filter),
-                stats: try archive.stats(), hasFTS: archive.hasFTS, fileCandidates: links, imageAssociations: images
-            )
         } completion: { [weak self] result in
             guard let self, self.revision == token else { return }
             self.loading = false
@@ -191,6 +228,7 @@ import UniformTypeIdentifiers
     }
     func toggleCollection() { isCollecting ? stop() : start() }
     func start() {
+        guard !isShuttingDown, !isWorking else { return }
         guard allowNotificationCapture else {
             feedback = "演示模式只读取合成档案"
             return
@@ -203,6 +241,7 @@ import UniformTypeIdentifiers
             [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
+        timer?.tolerance = min(1, Double(max(1, preferences.pollSeconds)) * 0.1)
         paths.log("capture_started")
         onStatusChange?()
         poll()
@@ -217,17 +256,21 @@ import UniformTypeIdentifiers
         onStatusChange?()
     }
     func poll(oneShot: Bool = false) {
-        guard allowNotificationCapture, isCollecting || oneShot, !pollBusy else { return }
+        guard !isShuttingDown, allowNotificationCapture, isCollecting || oneShot, !pollBusy else { return }
         pollBusy = true
         if oneShot && !isCollecting { statusText = "正在补扫系统保留的微信通知…" }
         let source = paths.source
-        worker.perform { archive in
-            try NotificationSource(url: source).capture(to: archive)
+        let work = captureWork
+        worker.perform { archive -> CaptureResult? in
+            guard !work.isCancelled else { return nil }
+            return try NotificationSource(url: source).capture(to: archive)
         } completion: { [weak self] result in
             guard let self else { return }
             self.pollBusy = false
+            guard !work.isCancelled, !self.isShuttingDown else { return }
             switch result {
             case .success(let value):
+                guard let value else { return }
                 self.lastPoll = Date()
                 self.sourceRows = value.sourceRows
                 self.capturedThisRun += value.inserted
@@ -255,7 +298,13 @@ import UniformTypeIdentifiers
             self.onStatusChange?()
         }
     }
-    func saveRuntime(_ state: String) {
+    func saveRuntime(_ state: String, uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        let signature = "\(state)|\(sourceRows)|\(parseErrors)|\(preferences.pollSeconds)"
+        let now = Date()
+        guard
+            signature != lastRuntimeSignature || uptime - lastRuntimeWrite >= 15
+                || now.timeIntervalSince(lastRuntimeWallWrite) >= 15
+        else { return }
         let payload: [String: Any] = [
             "state": state, "pid": ProcessInfo.processInfo.processIdentifier,
             "updated_at": Dates.string(Date()), "last_poll_at": lastPoll.map(Dates.string) ?? "",
@@ -263,12 +312,23 @@ import UniformTypeIdentifiers
         ]
         if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) {
             let url = paths.root.appendingPathComponent("runtime.json")
-            try? data.write(to: url, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            do {
+                try data.write(to: url, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                lastRuntimeSignature = signature
+                lastRuntimeWrite = uptime
+                lastRuntimeWallWrite = now
+            } catch { paths.log("runtime_status_write_failed") }
         }
     }
-    func savePreferences() {
-        do { try preferences.save(paths) } catch { errorText = error.localizedDescription }
+    func updatePreferences(_ update: (inout Preferences) -> Void) throws {
+        var updated = preferences
+        update(&updated)
+        try updated.save(paths)
+        preferences = updated
+    }
+    func setCollectOnLaunch(_ enabled: Bool) {
+        do { try updatePreferences { $0.collectOnLaunch = enabled } } catch { errorText = error.localizedDescription }
     }
     func openSettings() { onOpenSettings?() }
     func showPrivacy() {
@@ -292,6 +352,7 @@ import UniformTypeIdentifiers
     func chooseFileDirectory() { chooseDirectory(startMonitoring: true) }
     func chooseStartupDirectory() { chooseDirectory(startMonitoring: false) }
     private func chooseDirectory(startMonitoring: Bool) {
+        guard !isShuttingDown, !isWorking else { return }
         let panel = NSOpenPanel()
         panel.title = "选择微信账号目录或 msg/file 文件夹"
         panel.message = "只读探测文件，解码已关联图片并在本机缓存预览；不读取聊天数据库。"
@@ -302,11 +363,7 @@ import UniformTypeIdentifiers
         do {
             let directory = try FileDiscovery.directory(url).path
             if startMonitoring {
-                preferences.fileDirectory = directory
-                savePreferences()
-                fileOffset = 0
-                directoryImageOffset = 0
-                startDirectoryMonitoring()
+                try selectFileDirectory(directory)
             } else {
                 preferences.fileDirectory = directory
                 errorText = nil
@@ -316,7 +373,27 @@ import UniformTypeIdentifiers
             if !startMonitoring { errorText = error.localizedDescription }
         }
     }
+    func selectFileDirectory(_ directory: String) throws {
+        let changed = preferences.fileDirectory != directory
+        try updatePreferences { $0.fileDirectory = directory }
+        if changed {
+            invalidateQueries()
+            files = []
+            fileTotal = 0
+            directoryImages = []
+            directoryImageTotal = 0
+            messageFiles = [:]
+            imageLinks = [:]
+            selectedImage = nil
+            filesLoading = true
+            directoryImagesLoading = true
+        }
+        fileOffset = 0
+        directoryImageOffset = 0
+        startDirectoryMonitoring()
+    }
     func scanFiles() {
+        guard !isShuttingDown, !isWorking else { return }
         guard let directory = preferences.fileDirectory else { return }
         guard !fileScanBusy else {
             fileRescanPending = true
@@ -325,47 +402,58 @@ import UniformTypeIdentifiers
         fileScanBusy = true
         lastFileScanAttempt = Date()
         fileScanStatus = "正在探测本地文件…"
-        worker.perform { archive in
+        let work = directoryWork
+        worker.perform { archive -> (FileScanResult, ImageAssociationScan)? in
+            guard !work.isCancelled else { return nil }
             let files = try archive.scanFiles(in: URL(fileURLWithPath: directory))
+            guard !work.isCancelled else { return nil }
             let images = try archive.scanImageAssociations(fileRoot: URL(fileURLWithPath: files.root))
-            let previews = try archive.prepareImagePreviews()
-            return (files: files, images: images, previews: previews)
+            guard !work.isCancelled else { return nil }
+            return (files, images)
         } completion: { [weak self] result in
             guard let self else { return }
             self.fileScanBusy = false
+            defer {
+                if self.fileRescanPending {
+                    self.fileRescanPending = false
+                    self.scheduleDirectoryScan()
+                }
+            }
+            guard !work.isCancelled, !self.isShuttingDown else { return }
             switch result {
             case .success(let value):
+                guard let (files, images) = value else { return }
                 self.fileScanStatus =
-                    "\(value.files.complete && value.images.complete ? "扫描完成" : "部分扫描") · \(value.files.files) 个普通文件 · \(value.images.files) 个图片文件 · \(value.previews["ready"] ?? 0) 个预览"
+                    "\(files.complete && images.complete ? "扫描完成" : "部分扫描") · \(files.files) 个普通文件 · \(images.files) 个图片文件"
                 self.refreshFiles()
                 self.refresh()
                 if self.page == .images { self.refreshDirectoryImages() }
-            case .failure(let error): self.fileScanStatus = error.localizedDescription
-            }
-            if self.fileRescanPending {
-                self.fileRescanPending = false
-                self.scheduleDirectoryScan()
+                self.prepareRecentImages()
+            case .failure(let error):
+                self.fileScanStatus = error.localizedDescription
+                self.filesLoading = false
+                self.directoryImagesLoading = false
             }
         }
     }
     func startDirectoryMonitoring() {
+        guard !isShuttingDown else { return }
         stopDirectoryMonitoring()
         guard let selected = preferences.fileDirectory else {
             directoryMonitorStatus = "选择账户目录后自动探测"
             return
         }
         let revision = directoryMonitorRevision
+        let work = directoryWork
         directoryMonitorStatus = "自动补扫中 · 正在建立目录监听"
-        directoryTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.scanFiles() }
-        }
+        configureDirectoryTimer(interval: 15, work: work)
         scanFiles()
         // FSEvents can wait on a protected or unavailable volume. Never block the app's main thread on it.
         DispatchQueue.global(qos: .utility).async { [weak self] in
             do {
                 let root = try FileDiscovery.directory(URL(fileURLWithPath: selected))
                 let observer = try DirectoryMonitor(fileRoot: root) { [weak self] in
-                    DispatchQueue.main.async { self?.scheduleDirectoryScan() }
+                    DispatchQueue.main.async { if !work.isCancelled { self?.scheduleDirectoryScan() } }
                 }
                 DispatchQueue.main.async {
                     guard let self, self.directoryMonitorRevision == revision else {
@@ -373,7 +461,8 @@ import UniformTypeIdentifiers
                         return
                     }
                     self.directoryMonitor = observer
-                    self.directoryMonitorStatus = "自动监听中 · 每 15 秒补扫"
+                    self.directoryMonitorStatus = "自动监听中 · 每分钟补扫"
+                    self.configureDirectoryTimer(interval: 60, work: work)
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -383,7 +472,16 @@ import UniformTypeIdentifiers
             }
         }
     }
+    private func configureDirectoryTimer(interval: TimeInterval, work: BackgroundWorkToken) {
+        directoryTimer?.invalidate()
+        directoryTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in if !work.isCancelled { self?.scanFiles() } }
+        }
+        directoryTimer?.tolerance = interval / 10
+    }
     func stopDirectoryMonitoring() {
+        directoryWork.cancel()
+        directoryWork = BackgroundWorkToken()
         directoryMonitorRevision += 1
         directoryMonitor?.stop()
         directoryMonitor = nil
@@ -391,15 +489,32 @@ import UniformTypeIdentifiers
         directoryTimer = nil
         scheduledDirectoryScan?.cancel()
         scheduledDirectoryScan = nil
+        scheduledDirectorySince = nil
+        scheduledDirectoryID = nil
         fileRescanPending = false
     }
     func scheduleDirectoryScan() {
+        guard !isShuttingDown, !isWorking else { return }
         scheduledDirectoryScan?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.scanFiles() }
+        let token = directoryWork
+        let id = UUID()
+        let now = ProcessInfo.processInfo.systemUptime
+        let since = scheduledDirectorySince ?? now
+        scheduledDirectorySince = since
+        scheduledDirectoryID = id
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !token.isCancelled, self.scheduledDirectoryID == id else { return }
+            self.scheduledDirectoryScan = nil
+            self.scheduledDirectorySince = nil
+            self.scheduledDirectoryID = nil
+            self.scanFiles()
+        }
         scheduledDirectoryScan = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + min(0.8, max(0, 2 - (now - since))), execute: work)
     }
     func scheduleDirectoryImageRefresh() {
+        guard !isShuttingDown else { return }
+        imageReader.invalidate(.gallery)
         directoryImageRevision += 1
         pendingDirectoryImageRefresh?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.refreshDirectoryImages() }
@@ -407,6 +522,7 @@ import UniformTypeIdentifiers
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
     func refreshDirectoryImages() {
+        guard !isShuttingDown else { return }
         pendingDirectoryImageRefresh?.cancel()
         pendingDirectoryImageRefresh = nil
         directoryImageRevision += 1
@@ -415,11 +531,13 @@ import UniformTypeIdentifiers
         let offset = directoryImageOffset
         directoryImagesLoading = true
         // Reading cached gallery rows must not wait for a scan of the source directory.
-        imageReader.perform { archive in
-            (
-                groups: try archive.directoryImageGroups(query: query, offset: offset),
-                total: try archive.directoryImageGroupCount(query: query)
-            )
+        imageReader.performLatest(.gallery) { archive in
+            try archive.database.readSnapshot {
+                (
+                    groups: try archive.directoryImageGroups(query: query, offset: offset),
+                    total: try archive.directoryImageGroupCount(query: query)
+                )
+            }
         } completion: { [weak self] result in
             guard let self, self.directoryImageRevision == revision else { return }
             self.directoryImagesLoading = false
@@ -436,17 +554,30 @@ import UniformTypeIdentifiers
         }
     }
     func prepareVisibleImages(_ ids: [String]) {
-        guard !preparingVisibleImages, !ids.isEmpty else { return }
+        guard !isShuttingDown, !isWorking, !preparingVisibleImages, !ids.isEmpty else { return }
         preparingVisibleImages = true
+        let work = directoryWork
         worker.perform {
-            try $0.prepareImagePreviews(limit: 20, fileIDs: ids)
+            guard !work.isCancelled else { return [String: Int]() }
+            return try $0.prepareImagePreviews(limit: 5, fileIDs: ids, shouldContinue: { !work.isCancelled })
         } completion: { [weak self] result in
             guard let self else { return }
             self.preparingVisibleImages = false
+            guard !work.isCancelled, !self.isShuttingDown else { return }
             switch result {
             case .success: if self.page == .images { self.refreshDirectoryImages() }
             case .failure(let error): self.fileScanStatus = error.localizedDescription
             }
+        }
+    }
+    private func prepareRecentImages() {
+        guard !isShuttingDown, !isWorking else { return }
+        previewPreparation.prepareRecent(token: directoryWork) { [weak self] in
+            guard let self, !self.isShuttingDown else { return }
+            if self.page == .images { self.scheduleDirectoryImageRefresh() }
+            if self.page == .archive { self.scheduleRefresh() }
+        } onFailure: { [weak self] error in
+            self?.fileScanStatus = error.localizedDescription
         }
     }
     func paginateDirectoryImages(_ direction: Int) {
@@ -454,6 +585,9 @@ import UniformTypeIdentifiers
         refreshDirectoryImages()
     }
     func scheduleFileRefresh() {
+        guard !isShuttingDown else { return }
+        reader.invalidate(.files)
+        filesLoading = true
         fileRevision += 1
         pendingFileRefresh?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.refreshFiles() }
@@ -461,19 +595,24 @@ import UniformTypeIdentifiers
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
     func refreshFiles() {
+        guard !isShuttingDown else { return }
         pendingFileRefresh?.cancel()
         pendingFileRefresh = nil
         fileRevision += 1
         let revision = fileRevision
         let query = fileSearch
         let offset = fileOffset
-        worker.perform {
-            (
-                files: try $0.discoveredFiles(query: query, limit: 100, offset: offset),
-                total: try $0.discoveredFileCount(query: query), scanInfo: try $0.fileScanInfo()
-            )
+        filesLoading = true
+        reader.performLatest(.files) { archive in
+            try archive.database.readSnapshot {
+                (
+                    files: try archive.discoveredFiles(query: query, limit: 100, offset: offset),
+                    total: try archive.discoveredFileCount(query: query), scanInfo: try archive.fileScanInfo()
+                )
+            }
         } completion: { [weak self] result in
             guard let self, self.fileRevision == revision else { return }
+            self.filesLoading = false
             switch result {
             case .success(let value):
                 self.files = value.files
@@ -544,6 +683,7 @@ import UniformTypeIdentifiers
         } catch { errorText = error.localizedDescription }
     }
     func importArchive() {
+        guard !isShuttingDown, !isWorking else { return }
         let panel = NSOpenPanel()
         panel.title = "导入通知 JSONL 或旧版验证数据文件夹"
         panel.canChooseDirectories = true
@@ -565,6 +705,7 @@ import UniformTypeIdentifiers
         }
     }
     func exportArchive(markdown: Bool) {
+        guard !isShuttingDown, !isWorking else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue =
             "微信通知-\(Date().formatted(.iso8601.year().month().day().dateSeparator(.dash)))"
@@ -587,6 +728,7 @@ import UniformTypeIdentifiers
         }
     }
     func backup() {
+        guard !isShuttingDown, !isWorking else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "微信通知备份-\(Int(Date().timeIntervalSince1970)).sqlite"
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -602,6 +744,7 @@ import UniformTypeIdentifiers
         }
     }
     func clearArchive() {
+        guard !isShuttingDown, !isWorking else { return }
         let alert = NSAlert()
         alert.messageText = "清空本机通知档案？"
         alert.informativeText = "删除本应用保存的消息、图片预览缓存、文件索引和事件日志，不修改微信、系统通知、原文件或已导出的文件。此操作无法撤销，请先备份。"
@@ -609,8 +752,28 @@ import UniformTypeIdentifiers
         alert.addButton(withTitle: "取消")
         alert.addButton(withTitle: "清空档案")
         guard alert.runModal() == .alertSecondButtonReturn else { return }
+        clearLocalArchive()
+    }
+    func clearLocalArchive() {
+        guard !isShuttingDown, !isWorking else { return }
+        captureWork.cancel()
+        captureWork = BackgroundWorkToken()
         stop()
         stopDirectoryMonitoring()
+        invalidateQueries()
+        selectedImage = nil
+        messages = []
+        conversations = []
+        total = 0
+        messageFiles = [:]
+        imageLinks = [:]
+        files = []
+        fileTotal = 0
+        directoryImages = []
+        directoryImageTotal = 0
+        lastFileScanAttempt = nil
+        fileScanStatus = "档案已清空，尚未重新扫描"
+        PreviewImageLoader.clearCache()
         directoryMonitorStatus = "档案已清空，重启后重新探测"
         isWorking = true
         worker.perform {
@@ -620,13 +783,43 @@ import UniformTypeIdentifiers
             self.isWorking = false
             switch result {
             case .success:
+                PreviewImageLoader.clearCache()
                 self.selectedID = nil
                 self.refreshFiles()
                 self.refreshDirectoryImages()
                 self.feedback = "本机档案已清空；再次采集时，系统仍保留的通知可能重新入库。"
                 self.refresh()
-            case .failure(let error): self.errorText = error.localizedDescription
+            case .failure(let error):
+                self.errorText = error.localizedDescription
+                self.refresh()
+                self.refreshFiles()
+                self.refreshDirectoryImages()
             }
         }
+    }
+    private func invalidateQueries() {
+        revision += 1
+        fileRevision += 1
+        directoryImageRevision += 1
+        reader.invalidate(.messages)
+        reader.invalidate(.files)
+        imageReader.invalidate(.gallery)
+        pendingRefresh?.cancel()
+        pendingRefresh = nil
+        pendingFileRefresh?.cancel()
+        pendingFileRefresh = nil
+        pendingDirectoryImageRefresh?.cancel()
+        pendingDirectoryImageRefresh = nil
+        loading = false
+        filesLoading = false
+        directoryImagesLoading = false
+    }
+    func shutDown() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
+        captureWork.cancel()
+        stop()
+        stopDirectoryMonitoring()
+        invalidateQueries()
     }
 }

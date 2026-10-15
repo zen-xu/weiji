@@ -2,7 +2,9 @@ import Foundation
 
 final class NotificationSource {
     let database: SQLite
+    private let sourceIdentity: String
     init(url: URL) throws {
+        sourceIdentity = url.standardizedFileURL.path
         database = try SQLite(url.path, readOnly: true)
         let columns = try database.rows("PRAGMA table_info(record)").compactMap { $0.string("name") }
         guard Set(["rec_id", "data", "app_id", "delivered_date", "uuid"]).isSubset(of: Set(columns)) else {
@@ -34,18 +36,41 @@ final class NotificationSource {
         }
     }
     func capture(to archive: Archive) throws -> CaptureResult {
+        let version = try archive.database.rows("PRAGMA data_version").first?.int("data_version") ?? 0
+        let cached = archive.notificationCaptureCache.reusable(
+            source: sourceIdentity, revision: archive.notificationRevision, dataVersion: version)
         let rows = try snapshot()
+        let retainedIDs = Set(rows.suffix(NotificationCaptureCache.limit).compactMap { $0.int("rec_id") })
+        var next: [Int64: Data] = [:]
         var result = CaptureResult(sourceRows: rows.count)
         for row in rows {
+            let fingerprint = NotificationCaptureCache.fingerprint(row)
+            if let (id, value) = fingerprint, cached[id] == value {
+                result.reusedRows += 1
+                if retainedIDs.contains(id) { next[id] = value }
+                continue
+            }
             do {
+                result.decodedRows += 1
                 let message = try NotificationDecoder.decode(row)
-                switch try archive.ingest(message) {
-                case "inserted": result.inserted += 1
-                case "updated": result.updated += 1
+                let disposition = try archive.ingestDisposition(message)
+                switch disposition {
+                case .inserted: result.inserted += 1
+                case .updated: result.updated += 1
                 default: break
+                }
+                // Without a stable identity or delivery date, retain the existing fallback behavior.
+                if disposition.matchesSource, let (id, value) = fingerprint, retainedIDs.contains(id),
+                    message.notificationIdentity != nil || message.deliveredAt != nil
+                {
+                    next[id] = value
                 }
             } catch { result.failed += 1 }
         }
+        let finalVersion = try archive.database.rows("PRAGMA data_version").first?.int("data_version") ?? 0
+        archive.notificationCaptureCache.replace(
+            next, source: sourceIdentity, revision: archive.notificationRevision,
+            dataVersion: finalVersion == version ? version : nil)
         do { try archive.flushJournal() } catch { result.journalError = true }
         return result
     }

@@ -12,12 +12,12 @@ let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 final class SQLite {
     private(set) var handle: OpaquePointer?
-    init(_ path: String, readOnly: Bool = false) throws {
+    init(_ path: String, readOnly: Bool = false, readFailureMessage: String? = nil) throws {
         let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
         guard sqlite3_open_v2(path, &handle, flags | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
             if let handle { sqlite3_close(handle) }
             handle = nil
-            throw ListenerError(readOnly ? "无法读取系统通知。请给本应用完全磁盘访问权限，退出后重新打开。" : "无法打开本地档案数据库。")
+            throw ListenerError(readOnly ? readFailureMessage ?? "无法读取系统通知。请给本应用完全磁盘访问权限，退出后重新打开。" : "无法打开本地档案数据库。")
         }
         sqlite3_busy_timeout(handle, 3000)
     }

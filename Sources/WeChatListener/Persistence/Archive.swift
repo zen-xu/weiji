@@ -10,12 +10,16 @@ final class Archive {
     private(set) var hasImageCatalog = false
     private(set) var hasPreviewCatalog = false
     let archiveID: String
+    let notificationCaptureCache = NotificationCaptureCache()
+    private(set) var notificationRevision: UInt64 = 0
 
     init(paths: AppPaths, readOnly: Bool = false) throws {
         self.paths = paths
         self.readOnly = readOnly
         if !readOnly { try paths.prepare() }
-        database = try SQLite(paths.database.path, readOnly: readOnly)
+        database = try SQLite(
+            paths.database.path, readOnly: readOnly,
+            readFailureMessage: "无法读取本地档案数据库，请检查数据目录是否可访问。")
         let version = try database.rows("PRAGMA user_version").first?.int("user_version") ?? 0
         guard version <= 1 else { throw ListenerError("档案来自更新版本，请升级应用后再打开。") }
         if readOnly {
@@ -60,6 +64,7 @@ final class Archive {
               kind TEXT NOT NULL, recorded_at TEXT NOT NULL, payload BLOB NOT NULL,
               mirrored INTEGER NOT NULL DEFAULT 0)
             """)
+        try database.run("CREATE INDEX IF NOT EXISTS events_pending ON events(seq) WHERE mirrored=0")
         try database.run(
             """
             CREATE TABLE IF NOT EXISTS discovered_files (
@@ -98,7 +103,22 @@ final class Archive {
     }
 
     @discardableResult func ingest(_ input: Message) throws -> String {
-        try database.transaction {
+        try ingestDisposition(input).kind
+    }
+    enum IngestDisposition {
+        case inserted, updated, unchanged, newerArchivedVersion
+        var kind: String {
+            switch self {
+            case .inserted: "inserted"
+            case .updated: "updated"
+            case .unchanged, .newerArchivedVersion: "unchanged"
+            }
+        }
+        var matchesSource: Bool { self != .newerArchivedVersion }
+    }
+    func ingestDisposition(_ input: Message) throws -> IngestDisposition {
+        notificationRevision &+= 1
+        return try database.transaction {
             var message = input
             if let scope = message.mediaDirectoryID {
                 guard scope.count == 32, scope.allSatisfy({ $0.isHexDigit }) else { throw ListenerError("图片会话目录标识无效。") }
@@ -129,9 +149,9 @@ final class Archive {
                         try database.run(
                             "INSERT INTO events(message_id,kind,recorded_at,payload) VALUES(?,?,?,?)",
                             [.text(previous.id), .text("metadata_enriched"), .text(message.updatedAt), .blob(enriched)])
-                        return "updated"
+                        return .updated
                     }
-                    return "unchanged"
+                    return .unchanged
                 }
                 if let payload = existing.data("payload"),
                     let previous = try? JSONDecoder().decode(Message.self, from: payload)
@@ -139,7 +159,7 @@ final class Archive {
                     if let oldDate = Dates.parse(previous.updatedAt), let newDate = Dates.parse(message.updatedAt),
                         newDate < oldDate
                     {
-                        return "unchanged"
+                        return .newerArchivedVersion
                     }
                     message.id = previous.id
                     message.capturedAt = previous.capturedAt
@@ -188,7 +208,7 @@ final class Archive {
             try database.run(
                 "INSERT INTO events(message_id,kind,recorded_at,payload) VALUES(?,?,?,?)",
                 [.text(message.id), .text(kind), .text(message.updatedAt), .blob(payload)])
-            return kind
+            return existing == nil ? .inserted : .updated
         }
     }
 
@@ -354,7 +374,8 @@ final class Archive {
                     try file.write(contentsOf: line)
                 }
                 try file.synchronize()
-                try database.run("UPDATE events SET mirrored=1 WHERE seq<=?", [.integer(pending.last!.int("seq")!)])
+                try database.run(
+                    "UPDATE events SET mirrored=1 WHERE mirrored=0 AND seq<=?", [.integer(pending.last!.int("seq")!)])
                 return pending.count
             }
             if written == 0 { break }
@@ -507,6 +528,7 @@ final class Archive {
         }
     }
     func clear() throws {
+        notificationRevision &+= 1
         try database.transaction {
             try database.run("DELETE FROM discovered_files")
             try database.run("DELETE FROM image_files")

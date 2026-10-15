@@ -6,8 +6,10 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("打开应用后自动采集通知", isOn: $model.preferences.collectOnLaunch)
-                    .onChange(of: model.preferences.collectOnLaunch) { model.savePreferences() }
+                Toggle(
+                    "打开应用后自动采集通知",
+                    isOn: Binding(
+                        get: { model.preferences.collectOnLaunch }, set: model.setCollectOnLaunch))
             } header: {
                 Text("采集")
             } footer: {
@@ -21,7 +23,7 @@ struct SettingsView: View {
                     Button("在 Finder 中显示", action: model.revealData)
                     Button("备份…", action: model.backup)
                     Button("导入…", action: model.importArchive)
-                }
+                }.disabled(model.isWorking)
                 DisclosureGroup("存储详情") {
                     Text(model.paths.root.path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                     Text("\(model.stats?.events ?? 0) 条变更事件 · \(model.ftsAvailable ? "全文索引已就绪" : "字面搜索")")

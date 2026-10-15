@@ -30,7 +30,10 @@ extension Archive {
         }
         return ["state": "prepared", "ready": ready, "unavailable": failed, "content_storage": "local_plaintext_cache"]
     }
-    @discardableResult func prepareImagePreviews(limit: Int = 100, fileIDs: [String]? = nil) throws -> [String: Int] {
+    @discardableResult func prepareImagePreviews(
+        limit: Int = 100, fileIDs: [String]? = nil,
+        shouldContinue: () -> Bool = { true }
+    ) throws -> [String: Int] {
         guard !readOnly else { throw ListenerError("MCP 不能解密或写入图片缓存，请在应用中扫描。") }
         guard let root = try database.rows("SELECT value FROM metadata WHERE key='image_root'").first?.string("value")
         else { return ["ready": 0, "unavailable": 0] }
@@ -53,6 +56,7 @@ extension Archive {
         var unavailable = 0
         var attempts = 0
         for row in rows {
+            guard shouldContinue() else { break }
             let file = DiscoveredFile(
                 id: row.string("id")!, root: root, relativePath: row.string("relative_path")!,
                 name: row.string("name")!,
@@ -125,7 +129,7 @@ extension Archive {
                     [.text(file.id), .blob(try jsonData(preview))])
             }
         }
-        return ["ready": ready, "unavailable": unavailable]
+        return ["ready": ready, "unavailable": unavailable, "attempted": attempts]
     }
     func cachedImage(messageID: String, fileID: String) throws -> (Data, [String: Any]) {
         guard

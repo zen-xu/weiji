@@ -36,6 +36,10 @@ Documentation/                    开发、性能、签名与验证记录
 
 当前保持原有 Swift 5 语言模式（`swiftLanguageModes: [.v5]`），以保留现有队列和回调的并发语义。切换 Swift 6 严格并发需要单独验证 Sendable 和 actor 隔离。
 
+`LibraryWorker` 将档案访问限制在所属串行队列：写队列处理采集、索引和档案操作，消息/文件与图库使用独立只读工作器。可替代的 UI 查询使用 `performLatest`，输入变化立即 `invalidate`，过期工作不执行、不交付；不要将写任务交给此接口。`BackgroundWorkToken` 跨主线程与工作队列传递取消状态，`PreviewPreparation` 分小批准备图片，避免单次解码循环长期独占采集队列。初始化新档案完成后再调度正常只读查询。
+
+`NotificationCaptureCache` 仅保存有限的行摘要，由 Archive 的写队列拥有；本地变更版本与 SQLite data_version 共同保证失效，不能只按通知行号跳过。采集仍逐轮读取源快照，失败或较新归档冲突的记录不进入复用缓存。日志 outbox 的 `events_pending` 索引与只更新未同步行的条件必须一起保留。
+
 ## 日常开发
 
 ```bash

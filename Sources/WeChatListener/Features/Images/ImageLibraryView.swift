@@ -7,7 +7,9 @@ struct ImageLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             DirectoryStatusBar(model: model)
-            if model.directoryImages.isEmpty {
+            if model.directoryImagesLoading && model.directoryImages.isEmpty {
+                ProgressView("正在读取本地图片索引…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.directoryImages.isEmpty {
                 ContentUnavailableView {
                     Label(
                         model.preferences.fileDirectory == nil ? "选择微信账号目录" : "尚无目录图片",

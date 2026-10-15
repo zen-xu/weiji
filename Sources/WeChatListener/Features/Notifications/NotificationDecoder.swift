@@ -25,8 +25,16 @@ enum NotificationDecoder {
         let chat = info["chatname"] as? String
         let unique = info["unique_id"] as? String
         let uuid = row.data("uuid") ?? plist["uuid"] as? Data
-        let identity = nonempty(unique) ?? uuid.map { $0.base64EncodedString() } ?? nonempty(request["iden"] as? String)
-        let delivered = row.double("delivered_date").map { Date(timeIntervalSinceReferenceDate: $0) }
+        let identity =
+            nonempty(unique) ?? uuid.flatMap { $0.isEmpty ? nil : $0.base64EncodedString() }
+            ?? nonempty(request["iden"] as? String)
+        let seconds = row.double("delivered_date")
+        if let seconds {
+            guard seconds.isFinite, seconds >= Date.distantPast.timeIntervalSinceReferenceDate,
+                seconds <= Date.distantFuture.timeIntervalSinceReferenceDate
+            else { throw ListenerError("通知时间字段格式尚未适配，未猜测时间。") }
+        }
+        let delivered = seconds.map { Date(timeIntervalSinceReferenceDate: $0) }
         return make(
             record: record, title: request["titl"] as? String ?? "",
             subtitle: request["subt"] as? String ?? "", body: request["body"] as? String ?? "",
