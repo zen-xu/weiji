@@ -65,7 +65,7 @@ func cli(_ args: [String], paths: AppPaths) throws {
         try output(["readable": true, "wechat_notifications": count, "content_printed": false])
     case "--help", "help":
         print("""
-        微信消息监听 1.4.2
+        微信消息监听 1.4.3
         无参数：打开应用；mcp：MCP stdio 服务（只读本地档案）
         status | conversations [--query 名称] | search [--query 关键词] [--conversation ID]
         search 还支持 --from YYYY-MM-DD --to YYYY-MM-DD --limit 1..200 --offset N
@@ -135,7 +135,7 @@ func cli(_ args: [String], paths: AppPaths) throws {
     @objc func showWindow() { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     @objc func toggle() { model.toggleCollection() }
     @objc func about() {
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "微信消息监听", .applicationVersion: "1.4.2", .credits: NSAttributedString(string: "本机通知归档与只读 MCP 查询。通知不是完整聊天记录。")])
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "微信消息监听", .applicationVersion: "1.4.3", .credits: NSAttributedString(string: "本机通知归档与只读 MCP 查询。通知不是完整聊天记录。")])
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }

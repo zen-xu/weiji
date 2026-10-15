@@ -275,7 +275,7 @@ struct ListenerView: View {
                     Button("清空本机档案…", role: .destructive, action: model.clearArchive).disabled(model.isWorking)
                     Text("不删除微信内容或已导出、备份的文件。").font(.caption).foregroundStyle(.secondary)
                 }
-                Text("微信消息监听 1.4.2 · 本机构建\n通知采集依赖 macOS 内部数据格式，目前仅在本机环境验证。").font(.caption).foregroundStyle(.secondary)
+                Text("微信消息监听 1.4.3 · 本机构建\n通知采集依赖 macOS 内部数据格式，目前仅在本机环境验证。").font(.caption).foregroundStyle(.secondary)
             }.padding(28).frame(maxWidth: 850, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
         }
     }

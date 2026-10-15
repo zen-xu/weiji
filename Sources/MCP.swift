@@ -161,7 +161,7 @@ final class MCPServer {
             let version = ["2025-06-18", "2025-03-26", "2024-11-05"].contains(requested) ? requested : "2025-06-18"
             initialized = true
             result = ["protocolVersion": version, "capabilities": ["tools": ["listChanged": false], "resources": ["subscribe": false, "listChanged": false]],
-                      "serverInfo": ["name": "wechat-listener", "version": "1.4.2"], "instructions": Self.instructions]
+                      "serverInfo": ["name": "wechat-listener", "version": "1.4.3"], "instructions": Self.instructions]
         } else if method == "ping" { result = [:] }
         else {
             guard initialized else { return error(id: id, code: -32002, message: "Server not initialized") }

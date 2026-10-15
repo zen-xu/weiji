@@ -35,4 +35,4 @@ python3 Tests/test_mcp_stdio.py 'dist/微信消息监听.app/Contents/MacOS/WeCh
 python3 Tests/benchmark_performance.py
 ```
 
-构建和 164 项合成检查通过，MCP 独立进程检查通过。独立演示 App 的合成图片列表、搜索及 App 内大图显示也已验证。构建产物在 `dist`；本次没有替换已安装应用，临时签名导致更新后授权失效的问题仍需另行处理。
+构建和 164 项合成检查通过，MCP 独立进程检查通过。独立演示 App 的合成图片列表、搜索及 App 内大图显示也已验证。该次性能优化构建未替换已安装应用；后续已在 1.4.3 配置固定签名并安装，签名迁移状态见 [SIGNING.md](SIGNING.md)。
