@@ -65,10 +65,26 @@ func guiSearchInvalidatesImmediately() async throws {
     let root = try TestSupport.makeDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let model = AppModel(paths: try responsivenessFixture(root), allowNotificationCapture: false)
+    let oldReadFinished = DispatchSemaphore(value: 0)
+    let holdReader = DispatchSemaphore(value: 0)
+    defer {
+        holdReader.signal()
+        model.shutDown()
+    }
     model.refresh()
+    model.reader.perform { _ in
+        oldReadFinished.signal()
+        _ = holdReader.wait(timeout: .now() + 10)
+    } completion: { _ in
+    }
+    // Keep the main actor occupied until the old result is waiting for delivery.
+    // Hold subsequent reads so a slow CI scheduler cannot deliver the new result
+    // before the assertion and mistake it for a stale result.
+    #expect(oldReadFinished.wait(timeout: .now() + 5) == .success)
     model.search = "新关键词"
     try await Task.sleep(for: .milliseconds(100))
     #expect(model.messages.isEmpty)
+    holdReader.signal()
     try await eventually { model.messages.count == 1 && !model.loading }
     #expect(model.messages.first?.body == "新关键词")
 }
