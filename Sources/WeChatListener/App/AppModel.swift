@@ -11,6 +11,17 @@ import UniformTypeIdentifiers
     private lazy var previewPreparation = PreviewPreparation(worker: worker)
     private var directoryWork = BackgroundWorkToken()
     private var captureWork = BackgroundWorkToken()
+    private let reminderProcessor = ReminderProcessor()
+    private var reminderRevision = 0
+    private var reminderStartedAt: Date?
+    @Published var reminderIssue: String?
+    @Published private(set) var reminderRules: [ReminderRule] = []
+    private(set) var reminderRuleRevision = "initial"
+    private var reminderFileSignature: String?
+    private var reminderMonitor: Timer?
+    var onReminder: (([ReminderHit], Bool) -> Void)?
+    var onPreviewReminder: ((ReminderHit) -> Void)?
+    var onOpenReminderRules: (() -> Void)?
     private(set) var isShuttingDown = false
     let allowNotificationCapture: Bool
     @Published var page: Page = .archive
@@ -129,6 +140,7 @@ import UniformTypeIdentifiers
         imageReader = LibraryWorker(paths: paths, readOnly: true)
         preferences = Preferences.load(paths)
         mcpPortText = String(preferences.mcpPort ?? MCPHTTPServer.defaultPort)
+        refreshReminderRules()
     }
     var selected: Conversation? { conversations.first { $0.id == selectedID } }
     var filter: MessageFilter {
@@ -241,6 +253,7 @@ import UniformTypeIdentifiers
         guard !isCollecting else { return }
         errorText = nil
         isCollecting = true
+        beginReminderSession()
         statusText = "正在检查通知访问权限…"
         timer = Timer.scheduledTimer(withTimeInterval: Double(max(1, preferences.pollSeconds)), repeats: true) {
             [weak self] _ in
@@ -252,6 +265,9 @@ import UniformTypeIdentifiers
         poll()
     }
     func stop() {
+        reminderProcessor.cancelPending()
+        reminderStartedAt = nil
+        reminderRevision += 1
         timer?.invalidate()
         timer = nil
         isCollecting = false
@@ -266,9 +282,10 @@ import UniformTypeIdentifiers
         if oneShot && !isCollecting { statusText = "正在补扫系统保留的微信通知…" }
         let source = paths.source
         let work = captureWork
+        let reminderSince = isCollecting && !oneShot ? reminderStartedAt : nil
         worker.perform { archive -> CaptureResult? in
             guard !work.isCancelled else { return nil }
-            return try NotificationSource(url: source).capture(to: archive)
+            return try NotificationSource(url: source).capture(to: archive, reminderSince: reminderSince)
         } completion: { [weak self] result in
             guard let self else { return }
             self.pollBusy = false
@@ -293,6 +310,7 @@ import UniformTypeIdentifiers
                         "历史补扫完成：检查系统保留的 \(value.sourceRows) 条通知，新增 \(value.inserted) 条，更新 \(value.updated) 条。"
                 }
                 if value.inserted > 0 || value.updated > 0 { self.refresh() }
+                self.processReminderCandidates(value.reminderCandidates)
             case .failure(let error):
                 self.stop()
                 self.statusText = "通知读取受阻"
@@ -334,6 +352,71 @@ import UniformTypeIdentifiers
     }
     func setCollectOnLaunch(_ enabled: Bool) {
         do { try updatePreferences { $0.collectOnLaunch = enabled } } catch { errorText = error.localizedDescription }
+    }
+    func saveReminderRules(_ rules: [ReminderRule], expectedRevision: String? = nil) throws {
+        let store = ReminderRuleStore(paths: paths)
+        let snapshot = try store.save(rules, expectedRevision: expectedRevision ?? reminderRuleRevision)
+        reminderRules = snapshot.rules
+        reminderRuleRevision = snapshot.revision
+        reminderFileSignature = try? store.signature()
+        reminderRevision += 1
+        reminderIssue = nil
+        reminderProcessor.reset()
+    }
+    @discardableResult
+    func refreshReminderRules() -> Bool {
+        do {
+            let store = ReminderRuleStore(paths: paths)
+            let signature = try store.signature()
+            guard signature != reminderFileSignature else { return true }
+            let snapshot = try store.load()
+            reminderFileSignature = signature
+            if snapshot.revision != reminderRuleRevision {
+                reminderRules = snapshot.rules
+                reminderRuleRevision = snapshot.revision
+                reminderRevision += 1
+                reminderProcessor.reset()
+                reminderIssue = nil
+            }
+            return true
+        } catch {
+            reminderIssue = "无法加载提醒规则，本轮暂不匹配。请检查规则文件和目录权限。"
+            return false
+        }
+    }
+    func startReminderMonitoring() {
+        reminderMonitor?.invalidate()
+        refreshReminderRules()
+        reminderMonitor = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshReminderRules() }
+        }
+        reminderMonitor?.tolerance = 0.5
+    }
+    func beginReminderSession(at date: Date = Date()) {
+        reminderStartedAt = date
+        reminderRevision += 1
+    }
+    func setReminderSound(_ enabled: Bool) {
+        do { try updatePreferences { $0.reminderSound = enabled } } catch { errorText = error.localizedDescription }
+    }
+    func processReminderCandidates(_ candidates: [Message], now: Date = Date()) {
+        guard isCollecting, !isShuttingDown, let since = reminderStartedAt else { return }
+        let messages = candidates.filter {
+            guard let delivered = $0.deliveredAt.flatMap(Dates.parse) else { return false }
+            return delivered >= since && now.timeIntervalSince(delivered) >= -60
+                && now.timeIntervalSince(delivered) <= 300
+        }
+        guard refreshReminderRules() else { return }
+        let rules = reminderRules
+        guard !messages.isEmpty, rules.contains(where: \.isEnabled) else { return }
+        let token = reminderRevision
+        reminderProcessor.evaluate(messages, rules: rules) { [weak self] result in
+            guard let self, !self.isShuttingDown, self.isCollecting, self.refreshReminderRules(),
+                self.reminderRevision == token
+            else { return }
+            if !result.issues.isEmpty { self.reminderIssue = result.issues.joined(separator: "\n") }
+            if !result.hits.isEmpty { self.onReminder?(result.hits, self.preferences.reminderSound ?? false) }
+        }
     }
     func openSettings() { onOpenSettings?() }
     func showPrivacy() {
@@ -822,6 +905,8 @@ import UniformTypeIdentifiers
     func shutDown() {
         guard !isShuttingDown else { return }
         isShuttingDown = true
+        reminderMonitor?.invalidate()
+        reminderMonitor = nil
         captureWork.cancel()
         stop()
         stopDirectoryMonitoring()

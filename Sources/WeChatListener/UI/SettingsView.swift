@@ -15,6 +15,12 @@ struct SettingsView: View {
             } footer: {
                 Text("关闭窗口后继续在菜单栏运行。此选项不会添加系统登录启动项。")
             }
+            Section("重要消息提醒") {
+                Button("管理提醒规则…") { model.onOpenReminderRules?() }
+                let enabled = model.reminderRules.filter(\.isEnabled).count
+                Text(enabled == 0 ? "按发送者、会话和内容组合条件，匹配后在屏幕角落轻提示。" : "已启用 \(enabled) 条规则；默认无声，不打断当前输入。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("微信文件") {
                 if let directory = model.preferences.fileDirectory {
                     LabeledContent("账号目录") {

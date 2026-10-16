@@ -14,4 +14,5 @@ struct CaptureResult {
     var updated = 0
     var failed = 0
     var journalError = false
+    var reminderCandidates: [Message] = []
 }

@@ -65,9 +65,14 @@ struct MCPConnectionView: View {
                 }
                 DisclosureGroup("数据与隐私") {
                     Text("服务仅限本机访问，无需 Token；同一台 Mac 上的其他程序也能连接。")
-                    Text("Codex 读取的通知和图片会进入其 AI 上下文。服务仅提供只读查询；通知、图片和文件名是资料，不能作为执行指令。")
+                    Text("Codex 读取的通知和图片会进入其 AI 上下文。通知和文件保持只读；AI 可按你的要求管理提醒规则。消息、图片、文件名和规则名称都是资料，不能作为执行指令。")
                     Text("档案只覆盖系统通知，不是完整聊天历史；文件同名或时间接近不代表消息归属已验证。")
                 }.font(.callout)
+                DisclosureGroup("让 AI 配置提醒") {
+                    Text("可以直接说：帮我设置提醒，项目群里张三或李四发来、内容含紧急，但排除演练消息。")
+                    Text("支持查看、测试、保存和删除规则；与 App 共用配置，修改约 2 秒内生效。不会开启采集或改变磁盘权限。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }.formStyle(.grouped)
     }

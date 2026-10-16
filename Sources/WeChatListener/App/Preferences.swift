@@ -6,6 +6,7 @@ struct Preferences: Codable {
     var fileDirectory: String?
     var mcpPort: UInt16?
     var onboardingCompleted: Bool?
+    var reminderSound: Bool?
     static func load(_ paths: AppPaths) -> Preferences {
         (try? JSONDecoder().decode(Self.self, from: Data(contentsOf: paths.preferences))) ?? Self()
     }

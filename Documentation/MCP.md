@@ -63,3 +63,7 @@
 - 工具定义静态构建，参数提供含义和推荐值；不增加含义重复的工具。
 
 合成基准及验证边界见 [Performance.md](Performance.md) 和 [Validation.md](Validation.md)。
+
+## 提醒规则配置
+
+0.2.0 新增 `wechat_list_reminder_rules`、`wechat_test_reminder_rule`、`wechat_save_reminder_rule`、`wechat_delete_reminder_rule`。其中保存和删除只修改本机提醒规则，消息、文件及原有六个数据工具保持只读。请先读取 revision、测试正反示例，再以 expected_revision 保存；参数与示例见 [提醒规则](Reminders.md)。

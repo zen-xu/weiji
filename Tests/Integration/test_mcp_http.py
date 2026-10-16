@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="wechat-http-test-") as directory:
         assert code == 202 and body == b""
         ping = {"jsonrpc": "2.0", "id": 2, "method": "ping"}
         code, _, body = client.request({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
-        assert code == 200 and len(json.loads(body)["result"]["tools"]) == 6
+        assert code == 200 and len(json.loads(body)["result"]["tools"]) == 10
         code, _, body = client.request({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                                        "params": {"name": "wechat_status", "arguments": {}}})
         assert code == 200 and json.loads(body)["result"]["structuredContent"]["archive_available"] is False

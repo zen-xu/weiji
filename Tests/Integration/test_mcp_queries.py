@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import uuid
 
 from mcp_http_client import HTTPClient
 
@@ -44,10 +45,45 @@ for http_mode in (False, True):
                                        'clientInfo': {'name': 'synthetic-query-workflow', 'version': '1'}})
             assert 'detail=compact' in hello['instructions']
             tools = {entry['name']: entry for entry in rpc('tools/list')['tools']}
-            assert len(tools) == 6
+            assert len(tools) == 10
             assert tools['wechat_search_messages']['inputSchema']['properties']['detail']['default'] == 'full'
             assert tool('wechat_search_messages')['structuredContent']['error']['code'] == 'archive_not_available'
             assert not archive.exists()
+            # Reminder configuration is the only writable surface; testing is side-effect free.
+            initial = tool('wechat_list_reminder_rules')['structuredContent']
+            assert initial['revision'] == 'initial' and initial['rules'] == [] and not archive.exists()
+            rule = {'id': str(uuid.uuid4()), 'name': '项目紧急消息', 'match': 'all', 'conditions': [
+                {'field': 'conversation', 'operator': 'equals', 'value': '项目群'},
+                {'field': 'sender', 'operator': 'regex', 'value': '^(张三|李四)$'},
+                {'field': 'body', 'operator': 'contains', 'value': '紧急'},
+                {'field': 'body', 'operator': 'notContains', 'value': '演练'},
+            ]}
+            sample = {'conversation': '项目群', 'sender': '张三', 'body': '紧急：确认发布', 'conversation_kind': 'group'}
+            tested = tool('wechat_test_reminder_rule', {'rule': rule, 'sample': sample})['structuredContent']
+            assert tested['matched'] and not tested['saved'] and not archive.exists()
+            for change in ({'sender': '王五'}, {'body': '紧急演练'}, {'conversation': '其他频道'}):
+                assert not tool('wechat_test_reminder_rule', {'rule': rule, 'sample': dict(sample, **change)})['structuredContent']['matched']
+            saved = tool('wechat_save_reminder_rule', {'rule': rule, 'expected_revision': initial['revision']})['structuredContent']
+            assert len(saved['rules']) == 1 and not (archive / 'archive.sqlite').exists()
+            assert (archive / 'reminder-rules.json').stat().st_mode & 0o777 == 0o600
+            assert not (archive / 'preferences.json').exists()
+            stale = tool('wechat_delete_reminder_rule', {'id': rule['id'], 'expected_revision': initial['revision']})
+            assert stale['isError'] and stale['structuredContent']['error']['code'] == 'reminder_revision_conflict'
+            # Independent stdio process sees writes from either transport without restarting the source server.
+            other_requests = [
+                {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'},
+                {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'wechat_list_reminder_rules'}},
+            ]
+            other = subprocess.run([str(binary), 'mcp', '--data-dir', str(archive)], input=''.join(json.dumps(r) + '\n' for r in other_requests),
+                                   check=True, capture_output=True, text=True)
+            other_rules = json.loads(other.stdout.splitlines()[1])['result']['structuredContent']
+            assert other_rules == saved
+            invalid_rule = dict(rule, conditions=[{'field': 'body', 'operator': 'regex', 'value': '['}])
+            invalid = tool('wechat_save_reminder_rule', {'rule': invalid_rule, 'expected_revision': saved['revision']})
+            assert invalid['isError'] and invalid['structuredContent']['error']['code'] == 'invalid_arguments'
+            assert tool('wechat_list_reminder_rules')['structuredContent'] == saved
+            deleted = tool('wechat_delete_reminder_rule', {'id': rule['id'], 'expected_revision': saved['revision']})['structuredContent']
+            assert deleted['rules'] == []
             fixture = root / 'messages.jsonl'
             fixture.write_text(''.join(json.dumps({
                 'record_id': i, 'app': 'com.tencent.xinWeChat', 'title': '合成群', 'subtitle': '',

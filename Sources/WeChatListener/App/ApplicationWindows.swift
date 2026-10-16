@@ -63,4 +63,18 @@ enum ApplicationWindows {
         (controller.view as? NSHostingView<Content>)?.sizingOptions = [.minSize]
         return controller
     }
+
+    static func reminderRules(model: AppModel) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 580), styleMask: [.titled, .closable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "提醒规则"
+        window.isReleasedWhenClosed = false
+        window.tabbingMode = .disallowed
+        window.contentViewController = host(ReminderRulesView(model: model))
+        window.contentMinSize = NSSize(width: 640, height: 500)
+        window.setContentSize(NSSize(width: 720, height: 580))
+        window.center()
+        return window
+    }
 }

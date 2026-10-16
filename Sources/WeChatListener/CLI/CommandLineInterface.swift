@@ -103,7 +103,7 @@ enum CommandLineInterface {
                 """
                 \(ApplicationInfo.name) \(ApplicationInfo.version)
                 无参数：打开应用，自动提供本地 HTTP MCP 服务
-                mcp-http [--port 18765]：独立运行本地 HTTP MCP 服务（只读本地档案）
+                mcp-http [--port 18765]：独立运行本地 HTTP MCP 服务（档案只读，可管理提醒规则）
                 mcp：兼容旧版 MCP stdio 接入
                 status | conversations [--query 名称] | search [--query 关键词] [--conversation ID]
                 search 还支持 --from YYYY-MM-DD --to YYYY-MM-DD --limit 1..200 --offset N

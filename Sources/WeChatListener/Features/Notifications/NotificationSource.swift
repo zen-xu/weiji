@@ -35,7 +35,7 @@ final class NotificationSource {
             throw error
         }
     }
-    func capture(to archive: Archive) throws -> CaptureResult {
+    func capture(to archive: Archive, reminderSince: Date? = nil, now: Date = Date()) throws -> CaptureResult {
         let version = try archive.database.rows("PRAGMA data_version").first?.int("data_version") ?? 0
         let cached = archive.notificationCaptureCache.reusable(
             source: sourceIdentity, revision: archive.notificationRevision, dataVersion: version)
@@ -58,6 +58,12 @@ final class NotificationSource {
                 case .inserted: result.inserted += 1
                 case .updated: result.updated += 1
                 default: break
+                }
+                if let reminderSince, disposition == .inserted || disposition == .updated,
+                    let delivered = message.deliveredAt.flatMap(Dates.parse), delivered >= reminderSince,
+                    now.timeIntervalSince(delivered) >= -60, now.timeIntervalSince(delivered) <= 300
+                {
+                    result.reminderCandidates.append(message)
                 }
                 // Without a stable identity or delivery date, retain the existing fallback behavior.
                 if disposition.matchesSource, let (id, value) = fingerprint, retainedIDs.contains(id),

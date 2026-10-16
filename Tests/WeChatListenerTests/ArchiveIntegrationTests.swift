@@ -206,7 +206,9 @@ func archiveIntegration() throws {
         (initialized["result"] as? [String: Any])?["protocolVersion"] as? String == "2025-06-18",
         "MCP protocol initialization")
     let list = rpc(3, "tools/list")["result"] as! [String: Any]
-    try #require((list["tools"] as? [[String: Any]])?.count == 6, "MCP exposes six bounded read-only tools")
+    try #require(
+        (list["tools"] as? [[String: Any]])?.count == 10,
+        "MCP retains six read-only data tools and adds four scoped reminder tools")
     let tool =
         rpc(4, "tools/call", ["name": "wechat_search_messages", "arguments": ["query": "报价"]])["result"]
         as! [String: Any]

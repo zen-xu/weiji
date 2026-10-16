@@ -7,6 +7,7 @@ struct QueryService {
             "archive_available": false, "coverage": "notification_only", "notice": NotificationCoverage.notice,
             "read_only": true, "data_directory": paths.root.path,
             "timezone": TimeZone.current.identifier, "current_time": Dates.string(Date()),
+            "reminder_configuration_writable": true,
         ]
         if FileManager.default.fileExists(atPath: paths.database.path) {
             let store = try archive()
@@ -41,6 +42,9 @@ struct QueryService {
         return try Archive(paths: paths, readOnly: true)
     }
     func call(_ name: String, arguments args: [String: Any]) throws -> [String: Any] {
+        if ReminderMCP.tools.contains(where: { $0["name"] as? String == name }) {
+            return try ReminderMCP.call(name, arguments: args, service: self)
+        }
         switch name {
         case "wechat_status":
             try validate(args, allowed: [])
@@ -229,7 +233,7 @@ struct QueryService {
         else { throw MCPQueryError.invalidArguments("\(key) 必须是搜索结果返回的 64 位十六进制 ID。") }
         return id
     }
-    private func boolean(_ args: [String: Any], _ key: String, default fallback: Bool) throws -> Bool {
+    func boolean(_ args: [String: Any], _ key: String, default fallback: Bool) throws -> Bool {
         guard let value = args[key] else { return fallback }
         guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
             throw MCPQueryError.invalidArguments("\(key) 必须是布尔值。")

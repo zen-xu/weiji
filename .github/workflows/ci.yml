@@ -26,7 +26,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check actual AppKit window geometry
-        run: bash Scripts/test.sh --filter 'startupWindow|settingsWindow'
+        run: bash Scripts/test.sh --filter 'startupWindow|settingsWindow|reminderWindow'
   check:
     name: Check (${{ matrix.runner }})
     strategy:

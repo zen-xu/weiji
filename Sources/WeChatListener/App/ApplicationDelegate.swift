@@ -9,6 +9,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     var window: NSWindow!
     var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
+    private var reminderRulesWindow: NSWindow?
+    private let reminders = ReminderWindowController()
+    private let reminderPreview = ReminderWindowController()
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
         let model = AppModel(paths: paths, allowNotificationCapture: allowNotificationCapture)
         self.model = model
@@ -30,6 +33,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         appMenu.addItem(withTitle: "关于\(ApplicationInfo.name)", action: #selector(about), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
+        appMenu.addItem(withTitle: "提醒规则…", action: #selector(showReminderRules), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "显示窗口", action: #selector(showWindow), keyEquivalent: "0")
         appMenu.addItem(withTitle: "开始 / 暂停通知采集", action: #selector(toggle), keyEquivalent: "k")
@@ -96,6 +100,23 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         statusItem.menu = statusMenu
         model.onStatusChange = { [weak self] in self?.statusItem.button?.toolTip = self?.model.statusText }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
+        model.onOpenReminderRules = { [weak self] in self?.showReminderRules() }
+        model.onReminder = { [weak self] hits, sound in self?.reminders.present(hits, sound: sound) }
+        model.onPreviewReminder = { [weak self] hit in
+            self?.reminderPreview.dismiss()
+            self?.reminderPreview.present([hit], sound: false)
+        }
+        reminders.onCountChange = { [weak self] count in
+            self?.statusItem.button?.title = count > 0 ? " \(count)" : ""
+        }
+        reminders.openMessage = { [weak self] message in
+            guard let self, self.startup.isReady else { return }
+            self.model.page = .archive
+            self.model.search = ""
+            self.model.dateScope = .all
+            self.model.selectedID = message.conversationID
+            self.showWindow()
+        }
         startup.onStageChange = { [weak self] stage in
             guard let self else { return }
             self.statusItem.button?.toolTip = stage == .ready ? self.model.statusText : "等待完成启动设置"
@@ -104,6 +125,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         startup.onReady = { [weak self] in self?.model.startUp() }
         // Historical MCP queries remain available while first-run access is being configured.
         model.startMCPServer()
+        model.startReminderMonitoring()
         startup.start()
         showWindow()
     }
@@ -116,6 +138,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         menu.addItem(
             withTitle: startup.isReady ? "打开消息档案" : "完成启动设置…", action: #selector(showWindow), keyEquivalent: "")
         menu.addItem(withTitle: model.isCollecting ? "暂停采集" : "开始采集", action: #selector(toggle), keyEquivalent: "")
+        menu.addItem(withTitle: "提醒规则…", action: #selector(showReminderRules), keyEquivalent: "")
+        if reminders.inbox.count > 0 {
+            menu.addItem(
+                withTitle: "查看提醒（\(reminders.inbox.count) 条）", action: #selector(showReminders), keyEquivalent: "")
+        }
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "退出\(ApplicationInfo.name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
@@ -144,6 +171,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+    @objc func showReminderRules() {
+        if reminderRulesWindow == nil { reminderRulesWindow = ApplicationWindows.reminderRules(model: model) }
+        reminderRulesWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    @objc func showReminders() { reminders.showPending() }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(focusSearch) {
             return startup.isReady && [.archive, .files, .images].contains(model.page)
@@ -189,6 +222,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         startup.cancel()
+        reminders.dismiss()
+        reminderPreview.dismiss()
         model.stopMCPServer()
         model.shutDown()
         guard model.hasStartedLibrary else { return .terminateNow }

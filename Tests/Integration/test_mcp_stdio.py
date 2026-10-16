@@ -64,8 +64,8 @@ with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
     send({"jsonrpc": "2.0", "method": "notifications/initialized"})
     assert call(2, "ping")["result"] == {}
     tools = call(3, "tools/list")["result"]["tools"]
-    assert len(tools) == 6
-    assert all(tool["annotations"]["readOnlyHint"] for tool in tools)
+    assert len(tools) == 10
+    assert {tool["name"] for tool in tools if not tool["annotations"]["readOnlyHint"]} == {"wechat_save_reminder_rule", "wechat_delete_reminder_rule"}
     status = call(4, "tools/call", {"name": "wechat_status", "arguments": {}})["result"]
     assert status["structuredContent"]["archive_available"] is False
     assert not data_dir.exists(), "Read-only MCP status must not create the archive"
@@ -197,4 +197,4 @@ with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
         assert process.stderr.read() == "", "No message bodies or diagnostics should leak to stderr"
     read_status = subprocess.run([str(binary), "status", "--data-dir", str(data_dir)], check=True, capture_output=True, text=True)
     assert json.loads(read_status.stdout)["archive"]["messages"] == 5
-print("PASS: real " + ("HTTP" if http_mode else "stdio") + " MCP handshake, version negotiation, notifications, six tools, presentation, decoded image cache and actual image content, later asset-family variants, directory observations without image notifications, filename discovery via CLI, file metadata search without contents, no arbitrary scan requests, legacy attachment metadata ignored, pagination, context, invalid arguments, read-only startup, CLI import, clean EOF")
+print("PASS: real " + ("HTTP" if http_mode else "stdio") + " MCP handshake, version negotiation, notifications, six read-only data tools plus four scoped reminder tools, presentation, decoded image cache and actual image content, later asset-family variants, directory observations without image notifications, filename discovery via CLI, file metadata search without contents, no arbitrary scan requests, legacy attachment metadata ignored, pagination, context, invalid arguments, read-only startup, CLI import, clean EOF")
