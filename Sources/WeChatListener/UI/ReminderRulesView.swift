@@ -24,7 +24,9 @@ struct ReminderRulesView: View {
             if rules.isEmpty {
                 ContentUnavailableView(
                     "关注重要消息", systemImage: "bell.badge",
-                    description: Text("按发送者、会话和内容组合条件，例如“项目群里张三发来的紧急消息”。"))
+                    description: Text("按发送者、会话和内容组合条件，例如“项目群里张三发来的紧急消息”。")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(rules) { rule in
@@ -75,7 +77,8 @@ struct ReminderRulesView: View {
                 }
                 if let error { Text(error).font(.callout).foregroundStyle(.red) }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
-        }.frame(minWidth: 640, minHeight: 500).weijiAccent()
+        }.frame(minWidth: 640, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity, alignment: .top)
+            .weijiAccent()
             .sheet(item: $editing) { rule in
                 ReminderRuleEditor(rule: rule, preview: { model.onPreviewReminder?($0) }) { updated in
                     var next = rules
