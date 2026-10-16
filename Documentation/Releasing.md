@@ -2,6 +2,22 @@
 
 正式发布从 **0.1.0** 开始。之前 1.x 编号是本地开发构建，保留在历史验证记录中，不重写 Git 历史。版本唯一来源为 `Resources/Info.plist`：`CFBundleShortVersionString` 使用稳定 SemVer，`CFBundleVersion` 保持递增（0.1.0 为 build 18）。不改变档案格式或已有应用数据。
 
+Release 标题只使用标签版本号，例如 `v0.1.0`，安装说明和变更保留在正文中。
+
+## main 分支保护
+
+待启用规则位于 `.github/main-branch-protection.json`：必须通过 PR，合并前分支保持最新，Apple Silicon / Intel 两项 GitHub Actions 检查通过，讨论已解决；禁止强推和删除，管理员同样受约束。单人维护不要求另一人批准，但不能跳过 PR 和 CI。
+
+2026-10-16 实际查询普通分支保护与 rulesets 均返回 HTTP 403，GitHub 要求升级 Pro 或将仓库公开。当前保留私有，规则尚未生效。升级套餐后可执行：
+
+```bash
+gh api --method PUT repos/zen-xu/wechat-listener/branches/main/protection \
+  --input .github/main-branch-protection.json
+gh api repos/zen-xu/wechat-listener/branches/main/protection
+```
+
+启用后在功能分支提交，通过 PR 合并；不通过更改仓库公开状态绕过套餐限制。
+
 ## 日常 CI
 
 推送 `main`、创建或更新 PR，以及手动运行 [CI](https://github.com/zen-xu/wechat-listener/actions/workflows/ci.yml) 时，在 Apple Silicon 和 Intel 的 macOS 15 runner 上执行：

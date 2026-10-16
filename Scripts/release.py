@@ -141,13 +141,13 @@ def publish(tag):
     if existing and not existing[0]["draft"]:
         raise ValueError("Published release already exists; refusing to replace its assets.")
     if not existing:
-        run(["gh", "release", "create", tag, "--verify-tag", "--draft", "--title", f"微迹 {version}",
+        run(["gh", "release", "create", tag, "--verify-tag", "--draft", "--title", tag,
              "--notes-file", str(ROOT / "dist/release-notes.md")])
     run(["gh", "release", "upload", tag, *map(str, paths), "--clobber"])
     remote = json.loads(run(["gh", "release", "view", tag, "--json", "assets"]))
     if {item["name"]: item["size"] for item in remote["assets"]} != {p.name: p.stat().st_size for p in paths}:
         raise ValueError("Uploaded draft assets differ from the verified release files.")
-    run(["gh", "release", "edit", tag, "--draft=false", "--latest"])
+    run(["gh", "release", "edit", tag, "--title", tag, "--draft=false", "--latest"])
     print(run(["gh", "release", "view", tag, "--json", "url", "--jq", ".url"]))
 
 
