@@ -109,6 +109,8 @@ python3 -B Tests/Integration/test_signing_identity.py
 
 `build.sh` 用 SwiftPM 构建 release 产品，将可执行文件和图标复制为 `.app`，然后复用现有的固定证书签名并严格校验。测试通过 `check.sh` 单独执行。Bundle ID、安装路径、数据目录和 MCP 工具保持兼容。
 
+`bash build.sh --universal` 分别编译 Apple Silicon 和 Intel，再合并为通用二进制后签名。正式版本从 0.1.0 开始，GitHub 自动检查、发布保护条件及 CI 专用固定签名见 [Releasing.md](Releasing.md)。
+
 首次本机签名配置及授权迁移见 [Signing.md](Signing.md)。`.build/`、`dist/` 和本机签名配置不纳入版本管理。
 
 界面布局和交互约定见 [Interface.md](Interface.md)。真实窗口验证受锁屏状态影响时，须明确区分离屏内容截图和实际交互结果。

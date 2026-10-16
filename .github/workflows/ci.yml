@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Check version and release tools
+        run: |
+          python3 -B Scripts/release.py validate
+          python3 -B Tests/Integration/test_release_config.py
+      - name: Format, native tests and MCP integration
+        run: bash Scripts/check.sh
+      - name: Build development app (no release credentials)
+        env:
+          CODE_SIGN_IDENTITY: '-'
+        run: |
+          bash build.sh
+          ditto -c -k --sequesterRsrc --keepParent 'dist/微迹.app' "dist/Weiji-ci-${{ matrix.runner }}.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Weiji-ci-${{ matrix.runner }}
+          path: dist/Weiji-ci-*.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

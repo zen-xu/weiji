@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Validate versions, package the verified universal App, then publish complete draft releases."""
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import plistlib
+import re
+import shutil
+import subprocess
+import tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SEMVER = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+ASSETS = ["Weiji-{version}-macos-universal.zip", "Weiji-{version}-macos-universal.dmg",
+          "release-manifest.json", "SHA256SUMS"]
+
+
+def run(command):
+    return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def validate(tag=None, info=None):
+    if info is None:
+        info = plistlib.loads((ROOT / "Resources/Info.plist").read_bytes())
+    version = info["CFBundleShortVersionString"]
+    if not re.fullmatch(SEMVER, version):
+        raise ValueError("App version must be a stable SemVer (for example 0.1.0).")
+    if not re.fullmatch(r"[1-9][0-9]*", info["CFBundleVersion"]):
+        raise ValueError("Build number must be a positive integer.")
+    if info["CFBundleIdentifier"] != "local.xzy.WeChatListener" or info["CFBundleExecutable"] != "WeChatListener":
+        raise ValueError("Release must retain the existing bundle identity and executable.")
+    if tag is not None and tag != f"v{version}":
+        raise ValueError(f"Tag {tag!r} must exactly match v{version} from Resources/Info.plist.")
+    return version
+
+
+def file_hash(path):
+    result = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            result.update(block)
+    return result.hexdigest()
+
+
+def verify_app(app, tag):
+    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+    version = validate(tag, info)
+    if info != plistlib.loads((ROOT / "Resources/Info.plist").read_bytes()):
+        raise ValueError("Built bundle metadata differs from the committed release metadata.")
+    binary = app / "Contents/MacOS/WeChatListener"
+    architectures = sorted(run(["lipo", "-archs", str(binary)]).split())
+    if architectures != ["arm64", "x86_64"]:
+        raise ValueError("Release App must contain both arm64 and x86_64 slices.")
+    if run([str(binary), "--version"]) != version:
+        raise ValueError("Executable version does not match the release tag.")
+    fingerprint = hashlib.sha1((ROOT / "Resources/ReleaseSigning.cer").read_bytes()).hexdigest()
+    requirement = f'identifier "{info["CFBundleIdentifier"]}" and certificate root = H"{fingerprint}"'
+    run(["codesign", "--verify", "--strict", "--all-architectures", "-R=" + requirement, str(app)])
+    return info, architectures, fingerprint
+
+
+def package(tag):
+    version = validate(tag)
+    app = ROOT / "dist/微迹.app"
+    info, architectures, fingerprint = verify_app(app, tag)
+    output = ROOT / "dist/release"
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    archive = output / ASSETS[0].format(version=version)
+    run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)])
+    with tempfile.TemporaryDirectory(prefix="weiji-release-verify-") as temporary:
+        expanded = pathlib.Path(temporary) / "expanded"
+        run(["ditto", "-x", "-k", str(archive), str(expanded)])
+        verify_app(expanded / "微迹.app", tag)
+        stage = pathlib.Path(temporary) / "disk"
+        stage.mkdir()
+        run(["ditto", str(app), str(stage / "微迹.app")])
+        (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
+        (stage / "安装说明.txt").write_text(
+            "将微迹拖入 Applications。系统要求时，在隐私与安全性中允许打开，再按应用引导授予完全磁盘访问。\n"
+            "本版本使用固定项目证书签名，尚未经过 Apple Developer ID 公证。\n"
+            "从之前的本机签名构建切换时，需要重新添加一次权限。保留原安装路径可避免两份应用并存。\n"
+            "应用只归档系统通知，不代表完整聊天记录。\n", encoding="utf-8")
+        image = output / ASSETS[1].format(version=version)
+        run(["hdiutil", "create", "-volname", f"微迹 {version}", "-srcfolder", str(stage), "-format", "UDZO", str(image)])
+        run(["hdiutil", "verify", str(image)])
+    manifest = {
+        "version": version, "build": info["CFBundleVersion"], "tag": tag,
+        "commit": run(["git", "rev-parse", "HEAD"]), "architectures": architectures,
+        "minimum_macos": info["LSMinimumSystemVersion"], "bundle_id": info["CFBundleIdentifier"],
+        "certificate_sha1": fingerprint.upper(), "notarized": False,
+        "sha256": {p.name: file_hash(p) for p in sorted(output.iterdir())},
+    }
+    (output / "release-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    checksums = "".join(f"{file_hash(p)}  {p.name}\n" for p in sorted(output.iterdir()))
+    (output / "SHA256SUMS").write_text(checksums)
+    notes = f"""微迹 {version} · macOS 14+ · Apple Silicon / Intel 通用包
+
+下载 DMG 后将应用拖入 Applications，或解压 ZIP 安装。首次打开按系统提示和应用引导授予权限。
+
+- 原生通知档案、文件/图片索引、启动权限引导和微信风格绿色界面。
+- 应用启动即提供本机 HTTP MCP，默认 http://127.0.0.1:18765/mcp；原有 stdio 接口保留。
+- 固定 CI 项目证书签名；未使用 Apple Developer ID，尚未公证。首次打开可能需要在系统设置的“隐私与安全性”中允许。
+- 从原本机证书构建切换到此 CI 证书构建，需要重新添加一次完全磁盘访问。档案目录和 Bundle ID 保持兼容。
+- 通知档案不等于完整聊天历史，文件及图片的消息归属仍须核对。
+
+`SHA256SUMS` 可校验下载文件；`release-manifest.json` 记录提交、版本、双架构与证书指纹。
+"""
+    (ROOT / "dist/release-notes.md").write_text(notes)
+    print(f"Packaged and verified {version}: ZIP, DMG, manifest and checksums.")
+
+
+def verified_assets(directory, version):
+    paths = [directory / name.format(version=version) for name in ASSETS]
+    if not all(p.is_file() and p.stat().st_size > 0 for p in paths):
+        raise ValueError("Complete release assets are required before publishing.")
+    expected = {p.name for p in paths if p.name != "SHA256SUMS"}
+    entries = {}
+    for line in (directory / "SHA256SUMS").read_text().splitlines():
+        checksum, name = line.split("  ", 1)
+        if name in entries or name not in expected or not re.fullmatch(r"[a-f0-9]{64}", checksum):
+            raise ValueError("Invalid release checksum entries.")
+        entries[name] = checksum
+    if set(entries) != expected or any(file_hash(directory / name) != checksum for name, checksum in entries.items()):
+        raise ValueError("Release checksums do not match the complete asset set.")
+    manifest = json.loads((directory / "release-manifest.json").read_text())
+    if manifest["version"] != version or manifest["tag"] != f"v{version}":
+        raise ValueError("Release manifest version does not match its tag.")
+    return paths
+
+
+def publish(tag):
+    version = validate(tag)
+    paths = verified_assets(ROOT / "dist/release", version)
+    # Exact-tag lookup distinguishes absence from authentication/network errors.
+    releases = json.loads(run(["gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/releases?per_page=100"]))
+    existing = [item for page in releases for item in page if item["tag_name"] == tag]
+    if existing and not existing[0]["draft"]:
+        raise ValueError("Published release already exists; refusing to replace its assets.")
+    if not existing:
+        run(["gh", "release", "create", tag, "--verify-tag", "--draft", "--title", f"微迹 {version}",
+             "--notes-file", str(ROOT / "dist/release-notes.md")])
+    run(["gh", "release", "upload", tag, *map(str, paths), "--clobber"])
+    remote = json.loads(run(["gh", "release", "view", tag, "--json", "assets"]))
+    if {item["name"]: item["size"] for item in remote["assets"]} != {p.name: p.stat().st_size for p in paths}:
+        raise ValueError("Uploaded draft assets differ from the verified release files.")
+    run(["gh", "release", "edit", tag, "--draft=false", "--latest"])
+    print(run(["gh", "release", "view", tag, "--json", "url", "--jq", ".url"]))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=["validate", "package", "publish"])
+    parser.add_argument("--tag")
+    options = parser.parse_args()
+    if options.action != "validate" and not options.tag:
+        parser.error("--tag is required for packaging and publishing")
+    if options.action == "validate":
+        print(validate(options.tag))
+    elif options.action == "package":
+        package(options.tag)
+    else:
+        publish(options.tag)

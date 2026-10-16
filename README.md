@@ -6,6 +6,12 @@
 
 原名“微信消息监听”。改名沿用既有签名证书、Bundle ID、数据目录及 MCP 配置；历史通知和设置无需迁移。新构建产物为 `dist/微迹.app`。旧版安装路径的升级说明见 [签名与升级](Documentation/Signing.md)。
 
+## 下载与版本
+
+正式版本从 **0.1.0** 开始，macOS 14+，提供 Apple Silicon / Intel 通用包。下载见 [GitHub Releases](https://github.com/zen-xu/wechat-listener/releases)；当前仓库私有，需要仓库访问权限。
+
+推送 main / PR 自动检查并构建开发附件；推送 `v<版本>` 标签通过完整检查后，自动使用固定 CI 证书签名并发布 DMG、ZIP 和校验文件。CI 证书与本机开发证书不同，切换时需要重新添加一次磁盘访问权限；当前未经过 Apple Developer ID 公证。操作及安装说明见 [自动发布](Documentation/Releasing.md)。
+
 ## 打开与采集
 
 1. 打开 `dist/微迹.app`。
@@ -88,7 +94,7 @@ codex mcp add wechat-listener --url http://127.0.0.1:18765/mcp
 
 服务只绑定 IPv4 回环地址 `127.0.0.1`，不开放局域网访问；校验 Host，拒绝带 Origin 的浏览器请求。默认无需 Token，同一台 Mac 上的其他程序也能访问此只读服务。请求体最多 1 MiB，头部最多 16 KiB，最多 32 个连接，连接超时 15 秒；使用无会话的 JSON 响应，不提供 SSE 推送。档案仅以 `SQLITE_OPEN_READONLY` 查询，MCP 不读取系统通知数据库。
 
-1.7.0 起，HTTP 查询使用最多 4 个并发工作任务。AI 探索时推荐 `detail=compact, limit=20, include_total=false`，再按消息 ID 获取单条完整详情；返回 `next_offset` 指示翻页，错误提供原因与下一步操作。默认完整结果保持兼容，具体调用示例见 [MCP 查询指南](Documentation/MCP.md)。
+HTTP 查询使用最多 4 个并发工作任务。AI 探索时推荐 `detail=compact, limit=20, include_total=false`，再按消息 ID 获取单条完整详情；返回 `next_offset` 指示翻页，错误提供原因与下一步操作。默认完整结果保持兼容，具体调用示例见 [MCP 查询指南](Documentation/MCP.md)。
 
 需要独立运行服务时可用 `WeChatListener mcp-http --port 18765`；旧的 `WeChatListener mcp` stdio 接口仍可用。两种接口提供相同的只读工具。
 

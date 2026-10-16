@@ -19,6 +19,8 @@ python3 Scripts/setup_signing.py --confirm-local-trust
 
 项目忽略 `.local-signing/`、钥匙串和常见私钥文件。删除或更换签名证书会改变身份。新机器需自行配置签名并首次授权。本机证书不是 Apple Developer ID，也不能用于 Apple 公证发行。
 
+GitHub 从 0.1.0 起使用单独的固定 CI 证书，原本机私钥不导出，当前安装版不替换。两种签名之间切换需重新添加一次权限；CI Secret、临时钥匙串和自动发布说明见 [Releasing.md](Releasing.md)。
+
 已有 Apple 签名身份时可直接选择，无需创建本机证书：
 
 ```bash
