@@ -22,20 +22,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             persistCompletion: { try model.completeStartupSetup() })
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 600),
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered,
-            defer: false)
-        window.title = ApplicationInfo.name
-        window.titlebarAppearsTransparent = true
-        window.minSize = NSSize(width: 600, height: 600)
-        window.toolbarStyle = .unified
-        window.tabbingMode = .disallowed
-        window.isReleasedWhenClosed = false
+        window = ApplicationWindows.startup(model: model, startup: startup)
         window.delegate = self
-        window.contentViewController = NSHostingController(
-            rootView: ApplicationRootView(model: model, startup: startup))
-        window.center()
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
@@ -136,13 +124,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         }
     }
     private func configureMainWindow() {
-        window.styleMask.insert(.resizable)
-        window.minSize = NSSize(width: 820, height: 580)
-        if !window.setFrameUsingName("WeChatListenerMainWindow") {
-            window.setContentSize(NSSize(width: 1160, height: 800))
-            window.center()
-        }
-        window.setFrameAutosaveName("WeChatListenerMainWindow")
+        ApplicationWindows.library(window)
     }
     func applicationDidBecomeActive(_ notification: Notification) {
         if !startup.isReady { startup.recheck() }
@@ -157,16 +139,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             return
         }
         if settingsWindow == nil {
-            let settings = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
-                styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            settings.title = "设置"
-            settings.isReleasedWhenClosed = false
-            settings.tabbingMode = .disallowed
-            settings.contentViewController = NSHostingController(
-                rootView: SettingsView(model: model).frame(width: 560, height: 560))
-            settings.center()
-            settingsWindow = settings
+            settingsWindow = ApplicationWindows.settings(model: model)
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

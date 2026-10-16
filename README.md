@@ -8,7 +8,7 @@
 
 ## 下载与版本
 
-正式版本从 **0.1.0** 开始，macOS 14+，提供 Apple Silicon / Intel 通用包。下载见 [GitHub Releases](https://github.com/zen-xu/wechat-listener/releases)；当前仓库私有，需要仓库访问权限。
+正式版本从 **0.1.0** 开始，macOS 14+，提供 Apple Silicon / Intel 通用包。下载见 [GitHub Releases](https://github.com/zen-xu/weiji/releases)；当前仓库私有，需要仓库访问权限。
 
 推送 main / PR 自动检查并构建开发附件；推送 `v<版本>` 标签通过完整检查后，自动使用固定 CI 证书签名并发布 DMG、ZIP 和校验文件。CI 证书与本机开发证书不同，切换时需要重新添加一次磁盘访问权限；当前未经过 Apple Developer ID 公证。操作及安装说明见 [自动发布](Documentation/Releasing.md)。
 

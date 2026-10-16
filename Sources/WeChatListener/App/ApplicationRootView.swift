@@ -11,6 +11,12 @@ struct ApplicationRootView: View {
             } else {
                 StartupView(model: model, startup: startup)
             }
-        }.weijiAccent()
+        }
+        .frame(
+            minWidth: startup.isReady ? ApplicationWindows.libraryMinimum.width : ApplicationWindows.startupSize.width,
+            minHeight: startup.isReady
+                ? ApplicationWindows.libraryMinimum.height : ApplicationWindows.startupSize.height
+        )
+        .weijiAccent()
     }
 }
