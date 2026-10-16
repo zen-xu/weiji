@@ -44,7 +44,9 @@ ZIP 解压后重新校验签名和版本，DMG 验证完整性。附件齐备且
 
 首次配置命令是 `python3 -B Scripts/setup_ci_signing.py --repo zen-xu/wechat-listener`。它生成新的 CI 专用密钥，上传到明确指定仓库；临时私钥文件自动删除，不触碰本机钥匙串、信任或固定签名。再次运行保留原 Secret，不自动轮换；部分配置或公钥不一致时拒绝覆盖。
 
-只有通过检查的标签发布 job 能访问发布 Secrets；证书导入临时 runner 钥匙串，后续步骤只接收证书指纹和钥匙串路径，结束时清理。导入程序拒绝在本机或自托管 runner 上修改钥匙串，遵循 [GitHub 的证书导入方式](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)。丢失或更换 Secret 会改变后续签名身份，必须明确安排迁移，不能静默重新生成。
+只有通过检查的标签发布 job，以及在 main 上手动触发的已发布版本验证 job 能访问发布 Secrets；证书导入临时 runner 钥匙串，后续步骤只接收证书指纹和钥匙串路径，结束时删除私钥钥匙串和临时文件。只含公钥的管理员信任项随托管 VM 销毁清除，不调用可能等待交互授权的信任撤销操作。每条签名命令最多等待 60 秒。导入程序拒绝在本机或自托管 runner 上修改钥匙串，遵循 [GitHub 的证书导入方式](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)。丢失或更换 Secret 会改变后续签名身份，必须明确安排迁移，不能静默重新生成。
+
+需要重新核验已发布版本时，在 Release 的 Run workflow 中选择 main，输入已有标签；该模式导入原固定证书，验证跨构建身份，并实际下载附件检查摘要、源提交、App 版本/架构/签名和 DMG 完整性，随后验证私钥清理。它不重新发布，也不修改原标签或附件。CLI 同样提供 `python3 -B Scripts/release.py verify --tag v0.1.0`（签名要求使用已固定的 CI 证书）。
 
 这是固定的自签项目证书，不是 Apple Developer ID，产物尚未公证。首次打开可能需要在系统设置“隐私与安全性”中允许。从原本机证书切换到 CI 发布证书，需要重新添加一次完全磁盘访问；后续 CI 构建复用同一证书与 Bundle ID，但 TCC 授权保留仍需真实升级验收。不要关闭系统安全检查，也不要用临时签名开发附件覆盖正式安装版。
 

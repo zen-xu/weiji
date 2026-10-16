@@ -73,9 +73,6 @@ def install(directory):
 def cleanup(directory):
     if not directory.exists():
         return
-    certificate = directory / "certificate.cer"
-    if certificate.exists():
-        subprocess.run(["sudo", "-n", "security", "remove-trusted-cert", "-d", str(certificate)], capture_output=True, timeout=60)
     state = directory / "state.json"
     if state.exists():
         previous = json.loads(state.read_text())["keychains"]
@@ -84,6 +81,10 @@ def cleanup(directory):
     if keychain.exists():
         run(["security", "delete-keychain", str(keychain)])
     shutil.rmtree(directory)
+    # Administrator trust holds only the PUBLIC certificate. Revoking it through
+    # SecurityAgent can wait for interactive authorization even with sudo. This
+    # helper runs exclusively on disposable hosted VMs: the VM's destruction
+    # removes that trust entry; delete all private material synchronously above.
     print("Temporary release keychain and certificate material removed.")
 
 

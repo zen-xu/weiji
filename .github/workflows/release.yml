@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v[0-9]*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release to verify (does not republish)
+        default: v0.1.0
+        required: true
 
 permissions:
   contents: read
@@ -13,8 +19,10 @@ concurrency:
 
 jobs:
   checks:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
   release:
+    if: github.event_name == 'push'
     needs: checks
     runs-on: macos-15
     timeout-minutes: 30
@@ -66,6 +74,36 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 -B Scripts/release.py publish --tag "$RELEASE_TAG"
+      - name: Remove temporary signing keychain
+        if: always()
+        timeout-minutes: 3
+        run: python3 -B Scripts/ci_signing.py cleanup
+  verify:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned CI signing identity
+        timeout-minutes: 3
+        env:
+          RELEASE_CERTIFICATE_BASE64: ${{ secrets.RELEASE_CERTIFICATE_BASE64 }}
+          RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.RELEASE_CERTIFICATE_PASSWORD }}
+          RELEASE_CERTIFICATE_SHA1: ${{ secrets.RELEASE_CERTIFICATE_SHA1 }}
+        run: python3 -B Scripts/ci_signing.py install
+      - name: Verify signing and published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python3 -B Tests/Integration/test_signing_identity.py
+          python3 -B Scripts/release.py verify --tag "$RELEASE_TAG"
       - name: Remove temporary signing keychain
         if: always()
         timeout-minutes: 3

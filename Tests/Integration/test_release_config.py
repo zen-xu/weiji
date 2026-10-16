@@ -100,6 +100,18 @@ class ReleaseTests(unittest.TestCase):
                 signing.run(["security", "unlock-keychain", "-p", "secret-value", "fixture"])
         self.assertNotIn("secret-value", str(error.exception))
 
+    def test_cleanup_deletes_private_keychain_without_waiting_for_public_trust_revocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "signing"
+            root.mkdir()
+            (root / "state.json").write_text(json.dumps({"keychains": ["fixture-login"]}))
+            (root / "release.keychain-db").write_bytes(b"synthetic-keychain-only")
+            (root / "certificate.cer").write_bytes(b"public-certificate-only")
+            with mock.patch.object(signing, "run") as command:
+                signing.cleanup(root)
+            self.assertEqual([call.args[0][1] for call in command.call_args_list], ["list-keychains", "delete-keychain"])
+            self.assertFalse(root.exists())
+
     def test_bootstrap_never_rotates_existing_or_partial_secrets(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)

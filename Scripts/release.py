@@ -44,10 +44,10 @@ def file_hash(path):
     return result.hexdigest()
 
 
-def verify_app(app, tag):
+def verify_app(app, tag, match_source=True):
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     version = validate(tag, info)
-    if info != plistlib.loads((ROOT / "Resources/Info.plist").read_bytes()):
+    if match_source and info != plistlib.loads((ROOT / "Resources/Info.plist").read_bytes()):
         raise ValueError("Built bundle metadata differs from the committed release metadata.")
     binary = app / "Contents/MacOS/WeChatListener"
     architectures = sorted(run(["lipo", "-archs", str(binary)]).split())
@@ -151,9 +151,36 @@ def publish(tag):
     print(run(["gh", "release", "view", tag, "--json", "url", "--jq", ".url"]))
 
 
+def verify_published(tag):
+    if not re.fullmatch("v" + SEMVER, tag):
+        raise ValueError("Expected a stable release tag such as v0.1.0.")
+    version = tag[1:]
+    metadata = json.loads(run(["gh", "release", "view", tag, "--json", "isDraft,url"]))
+    if metadata["isDraft"]:
+        raise ValueError("Release is still a draft.")
+    with tempfile.TemporaryDirectory(prefix="weiji-published-verify-") as temporary:
+        root = pathlib.Path(temporary)
+        run(["gh", "release", "download", tag, "--dir", str(root)])
+        verified_assets(root, version)
+        manifest = json.loads((root / "release-manifest.json").read_text())
+        if manifest["commit"] != run(["git", "rev-list", "-n", "1", tag]):
+            raise ValueError("Published manifest does not identify the tagged source commit.")
+        expanded = root / "expanded"
+        run(["ditto", "-x", "-k", str(root / ASSETS[0].format(version=version)), str(expanded)])
+        info, architectures, fingerprint = verify_app(expanded / "微迹.app", tag, match_source=False)
+        if (manifest["build"] != info["CFBundleVersion"] or manifest["architectures"] != architectures
+                or manifest["certificate_sha1"] != fingerprint.upper()):
+            raise ValueError("Published manifest does not match its signed application.")
+        for name, expected in manifest["sha256"].items():
+            if name not in {template.format(version=version) for template in ASSETS[:2]} or file_hash(root / name) != expected:
+                raise ValueError("Published manifest contains invalid asset checksums.")
+        run(["hdiutil", "verify", str(root / ASSETS[1].format(version=version))])
+    print(f"Verified published assets, tagged source, version, architectures, pinned signature and DMG: {metadata['url']}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["validate", "package", "publish"])
+    parser.add_argument("action", choices=["validate", "package", "publish", "verify"])
     parser.add_argument("--tag")
     options = parser.parse_args()
     if options.action != "validate" and not options.tag:
@@ -162,5 +189,7 @@ if __name__ == "__main__":
         print(validate(options.tag))
     elif options.action == "package":
         package(options.tag)
-    else:
+    elif options.action == "publish":
         publish(options.tag)
+    else:
+        verify_published(options.tag)
