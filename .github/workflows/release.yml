@@ -34,6 +34,7 @@ jobs:
           python3 -B Scripts/release.py validate --tag "$RELEASE_TAG"
           git merge-base --is-ancestor HEAD origin/main
       - name: Install pinned CI signing identity
+        timeout-minutes: 3
         env:
           RELEASE_CERTIFICATE_BASE64: ${{ secrets.RELEASE_CERTIFICATE_BASE64 }}
           RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.RELEASE_CERTIFICATE_PASSWORD }}
@@ -67,4 +68,5 @@ jobs:
         run: python3 -B Scripts/release.py publish --tag "$RELEASE_TAG"
       - name: Remove temporary signing keychain
         if: always()
+        timeout-minutes: 3
         run: python3 -B Scripts/ci_signing.py cleanup

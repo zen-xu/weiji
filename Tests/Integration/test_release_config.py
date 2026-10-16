@@ -7,6 +7,7 @@ import pathlib
 import plistlib
 import tempfile
 import unittest
+import subprocess
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -92,6 +93,12 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     signing.runner_directory()
                 command.assert_not_called()
+
+    def test_ci_timeout_does_not_expose_command_passwords(self):
+        with mock.patch.object(signing.subprocess, "run", side_effect=subprocess.TimeoutExpired(["security", "secret-value"], 60)):
+            with self.assertRaises(RuntimeError) as error:
+                signing.run(["security", "unlock-keychain", "-p", "secret-value", "fixture"])
+        self.assertNotIn("secret-value", str(error.exception))
 
     def test_bootstrap_never_rotates_existing_or_partial_secrets(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -16,10 +16,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def run(arguments, **kwargs):
-    result = subprocess.run(arguments, capture_output=True, **kwargs)
+    label = f"{arguments[0]} {arguments[1]}"
+    print(f"CI signing: {label}", flush=True)
+    try:
+        result = subprocess.run(arguments, capture_output=True, timeout=60, **kwargs)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"CI signing command timed out: {label}") from None
     if result.returncode:
         # Arguments may contain an ephemeral keychain/password. Never print them or command output.
-        raise RuntimeError(f"CI signing command failed: {arguments[0]} {arguments[1]}")
+        raise RuntimeError(f"CI signing command failed ({result.returncode}): {label}")
     return result.stdout
 
 
@@ -52,7 +57,9 @@ def install(directory):
     run(["security", "unlock-keychain", "-p", keychain_password, str(keychain)])
     run(["security", "import", str(archive), "-k", str(keychain), "-P", password, "-T", "/usr/bin/codesign"])
     archive.unlink()
-    run(["security", "add-trusted-cert", "-r", "trustRoot", "-p", "codeSign", "-k", str(keychain), str(directory / "certificate.cer")])
+    # User-domain trust can wait for an authorization dialog even on an unlocked runner.
+    # The disposable hosted runner permits passwordless sudo; never use this path locally.
+    run(["sudo", "-n", "security", "add-trusted-cert", "-d", "-r", "trustRoot", "-p", "codeSign", "-k", str(keychain), str(directory / "certificate.cer")])
     run(["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", keychain_password, str(keychain)])
     run(["security", "list-keychains", "-d", "user", "-s", str(keychain), *previous])
     identities = run(["security", "find-identity", "-v", "-p", "codesigning", str(keychain)], text=True)
@@ -68,7 +75,7 @@ def cleanup(directory):
         return
     certificate = directory / "certificate.cer"
     if certificate.exists():
-        subprocess.run(["security", "remove-trusted-cert", str(certificate)], capture_output=True)
+        subprocess.run(["sudo", "-n", "security", "remove-trusted-cert", "-d", str(certificate)], capture_output=True, timeout=60)
     state = directory / "state.json"
     if state.exists():
         previous = json.loads(state.read_text())["keychains"]
