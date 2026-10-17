@@ -268,3 +268,18 @@ func reminderSchedulingCompatibility() throws {
     preview.dismiss()
     preview.panel?.close()
 }
+
+@Test("Completing a reminder card preserves deferred messages that have not been shown")
+@MainActor func reminderInboxHandleVisible() throws {
+    let now = TestSupport.referenceDate
+    let rule = ReminderRule(name: "合成规则", conditions: [ReminderCondition(value: "通知")])
+    let inbox = ReminderInbox()
+    let first = inboxHit(rule)
+    let later = inboxHit(rule)
+    inbox.append([first, later], rules: [rule], now: now)
+    _ = inbox.takeDue(rules: [rule], now: now)
+    inbox.snooze(later.id, until: now.addingTimeInterval(300))
+    inbox.handleVisible(now: now)
+    #expect(inbox.count == 1 && inbox.hits[0].id == later.id)
+    #expect(inbox.takeDue(rules: [rule], now: now.addingTimeInterval(300)).count == 1)
+}

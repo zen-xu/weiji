@@ -160,10 +160,10 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
         hide()
         snoozeTimer?.invalidate()
         snoozeTimer = nil
-        inbox.clear()
+        inbox.dismissPrompt()
         if let panel { NSApp.removeWindowsItem(panel) }
         inWindowsMenu = false
-        onCountChange?(0)
+        onCountChange?(inbox.count)
         resize()
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -185,8 +185,8 @@ struct ReminderPromptView: View {
             HStack(spacing: 7) {
                 Image(systemName: "bell.badge.fill").foregroundStyle(AppAppearance.accent)
                 Text("微迹 · 重要消息").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                if inbox.count > 1 {
-                    Text("\(inbox.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                if inbox.visibleHits.count > 1 {
+                    Text("\(inbox.visibleHits.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: expand) {
@@ -222,7 +222,7 @@ struct ReminderPromptView: View {
                     Button("1 小时后提醒") { snooze(60) }
                 }.menuStyle(.borderlessButton).fixedSize()
                 Spacer()
-                Button("全部处理", action: confirm)
+                Button("处理当前提醒", action: confirm)
                     .buttonStyle(.plain).foregroundStyle(AppAppearance.accent)
             }.font(.callout).padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 10)
         }.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

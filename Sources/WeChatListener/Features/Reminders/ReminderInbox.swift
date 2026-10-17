@@ -222,6 +222,21 @@ final class ReminderInbox: ObservableObject {
         entries = nextEntries
         persist()
     }
+    func handleVisible(now: Date = Date()) {
+        var next = entries
+        for index in next.indices
+        where !next[index].isHandled && next[index].dueAt <= now
+            && (next[index].snoozedUntil ?? .distantPast) <= now
+        {
+            next[index].handledAt = now
+        }
+        expanded = false
+        entries = next
+        persist()
+    }
+    func dismissPrompt() {
+        if persistence == nil { clear() } else { handleVisible() }
+    }
     func restore(_ id: String, now: Date = Date()) {
         var nextEntries = entries
         guard let index = nextEntries.firstIndex(where: { $0.id == id }) else { return }
