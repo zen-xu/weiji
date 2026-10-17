@@ -17,7 +17,8 @@ Sources/
       Messages/                   消息展示与档案页面
       Files/                      普通文件发现、索引与页面
       Images/                     图片发现、关联、解码、缓存与页面
-      MCP/                        只读查询服务、stdio / HTTP 传输与接入页面
+      MCP/                        查询与提醒配置工具、stdio / HTTP 传输与接入页面
+      Reminders/                  规则、匹配、提醒收件箱、安静时段与合并调度
     Models/                       档案值类型
     Persistence/                  SQLite 封装和档案持久化
     Services/                     后台档案队列和目录监听
@@ -114,3 +115,5 @@ python3 -B Tests/Integration/test_signing_identity.py
 首次本机签名配置及授权迁移见 [Signing.md](Signing.md)。`.build/`、`dist/` 和本机签名配置不纳入版本管理。
 
 界面布局和交互约定见 [Interface.md](Interface.md)。真实窗口验证受锁屏状态影响时，须明确区分离屏内容截图和实际交互结果。
+
+提醒收件箱由 `AppModel` 持有，生产提示卡片与侧边栏共享同一个实例；规则预览使用独立内存实例。收件箱在主 actor 一次发布批量变更，串行 utility 队列合并过时写任务并原子保存，退出前 flush。`ReminderWindowController` 只维护一个到期计时器；休眠恢复和时区变化会重新核对。匹配与展示策略分离：MCP 示例测试只测条件，不推进实际提醒或冷却状态。规则新字段使用兼容解码；旧 MCP 更新省略节奏参数时保留既有值。

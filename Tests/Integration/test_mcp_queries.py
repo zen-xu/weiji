@@ -52,7 +52,8 @@ for http_mode in (False, True):
             # Reminder configuration is the only writable surface; testing is side-effect free.
             initial = tool('wechat_list_reminder_rules')['structuredContent']
             assert initial['revision'] == 'initial' and initial['rules'] == [] and not archive.exists()
-            rule = {'id': str(uuid.uuid4()), 'name': '项目紧急消息', 'match': 'all', 'conditions': [
+            rule = {'id': str(uuid.uuid4()), 'name': '项目紧急消息', 'match': 'all',
+                    'minimum_interval_seconds': 300, 'quiet_hours': {'start_minute': 1320, 'end_minute': 480}, 'conditions': [
                 {'field': 'conversation', 'operator': 'equals', 'value': '项目群'},
                 {'field': 'sender', 'operator': 'regex', 'value': '^(张三|李四)$'},
                 {'field': 'body', 'operator': 'contains', 'value': '紧急'},
@@ -65,6 +66,8 @@ for http_mode in (False, True):
                 assert not tool('wechat_test_reminder_rule', {'rule': rule, 'sample': dict(sample, **change)})['structuredContent']['matched']
             saved = tool('wechat_save_reminder_rule', {'rule': rule, 'expected_revision': initial['revision']})['structuredContent']
             assert len(saved['rules']) == 1 and not (archive / 'archive.sqlite').exists()
+            assert saved['rules'][0]['minimum_interval_seconds'] == 300
+            assert saved['rules'][0]['quiet_hours'] == rule['quiet_hours']
             assert (archive / 'reminder-rules.json').stat().st_mode & 0o777 == 0o600
             assert not (archive / 'preferences.json').exists()
             stale = tool('wechat_delete_reminder_rule', {'id': rule['id'], 'expected_revision': initial['revision']})

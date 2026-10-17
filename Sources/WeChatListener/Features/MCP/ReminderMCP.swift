@@ -23,6 +23,19 @@ enum ReminderMCP {
             "enabled": ["type": "boolean", "default": true],
             "match": ["type": "string", "enum": ["all", "any"], "default": "all"],
             "ignore_case": ["type": "boolean", "default": true],
+            "minimum_interval_seconds": [
+                "type": "integer", "minimum": 0, "maximum": 86400,
+                "description": "同一规则、同一会话的合并间隔；0=即时提醒。修改时省略保留原值。",
+            ],
+            "quiet_hours": [
+                "type": ["object", "null"], "additionalProperties": false,
+                "required": ["start_minute", "end_minute"],
+                "description": "Mac 本地时间，每天从开始到结束安静；分钟=小时*60+分钟，支持跨午夜。null=关闭，修改时省略保留。",
+                "properties": [
+                    "start_minute": ["type": "integer", "minimum": 0, "maximum": 1439],
+                    "end_minute": ["type": "integer", "minimum": 0, "maximum": 1439],
+                ],
+            ],
             "conditions": [
                 "type": "array", "minItems": 1, "maxItems": ReminderRule.maximumConditions, "items": conditionSchema,
             ],
@@ -81,6 +94,9 @@ enum ReminderMCP {
         [
             "id": rule.id.uuidString, "name": rule.name, "enabled": rule.isEnabled,
             "match": rule.matchAll ? "all" : "any", "ignore_case": rule.ignoreCase,
+            "minimum_interval_seconds": rule.minimumIntervalSeconds,
+            "quiet_hours": rule.quietHours.map { ["start_minute": $0.startMinute, "end_minute": $0.endMinute] } as Any?
+                ?? NSNull(),
             "conditions": rule.conditions.map {
                 ["field": $0.field.rawValue, "operator": $0.comparison.rawValue, "value": $0.value]
             },
@@ -94,7 +110,12 @@ enum ReminderMCP {
     }
     static func parse(_ input: Any?, service: QueryService, requireID: Bool) throws -> ReminderRule {
         guard let args = input as? [String: Any] else { throw MCPQueryError.invalidArguments("rule 必须是对象。") }
-        try service.validate(args, allowed: ["id", "name", "enabled", "match", "ignore_case", "conditions"])
+        try service.validate(
+            args,
+            allowed: [
+                "id", "name", "enabled", "match", "ignore_case", "conditions", "quiet_hours",
+                "minimum_interval_seconds",
+            ])
         var rule = ReminderRule()
         if let id = try service.text(args, "id") {
             guard let uuid = UUID(uuidString: id) else { throw MCPQueryError.invalidArguments("rule.id 必须是 UUID。") }
@@ -106,6 +127,17 @@ enum ReminderMCP {
             !conditions.isEmpty, conditions.count <= ReminderRule.maximumConditions
         else {
             throw MCPQueryError.invalidArguments("需要 name 和 1–\(ReminderRule.maximumConditions) 个 conditions。")
+        }
+        rule.minimumIntervalSeconds = try service.integer(
+            args, "minimum_interval_seconds", default: 0, range: 0...86400)
+        if let quiet = args["quiet_hours"], !(quiet is NSNull) {
+            guard let quiet = quiet as? [String: Any], quiet["start_minute"] != nil, quiet["end_minute"] != nil else {
+                throw MCPQueryError.invalidArguments("quiet_hours 需要 start_minute 和 end_minute，或传 null 关闭。")
+            }
+            try service.validate(quiet, allowed: ["start_minute", "end_minute"])
+            rule.quietHours = try ReminderQuietHours(
+                startMinute: service.integer(quiet, "start_minute", default: 1320, range: 0...1439),
+                endMinute: service.integer(quiet, "end_minute", default: 480, range: 0...1439))
         }
         rule.name = name
         rule.isEnabled = try service.boolean(args, "enabled", default: true)
@@ -165,8 +197,13 @@ enum ReminderMCP {
         guard snapshot.revision == revision else { throw MCPQueryError.reminderConflict }
         var rules = snapshot.rules
         if name == "wechat_save_reminder_rule" {
-            let rule = try parse(args["rule"], service: service, requireID: true)
+            var rule = try parse(args["rule"], service: service, requireID: true)
             if let index = rules.firstIndex(where: { $0.id == rule.id }) {
+                let supplied = args["rule"] as? [String: Any] ?? [:]
+                if supplied["quiet_hours"] == nil { rule.quietHours = rules[index].quietHours }
+                if supplied["minimum_interval_seconds"] == nil {
+                    rule.minimumIntervalSeconds = rules[index].minimumIntervalSeconds
+                }
                 rules[index] = rule
             } else {
                 rules.append(rule)

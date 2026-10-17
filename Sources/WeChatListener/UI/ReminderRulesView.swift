@@ -3,6 +3,7 @@ import SwiftUI
 struct ReminderRulesView: View {
     @ObservedObject var model: AppModel
     @State private var editing: ReminderRule?
+    @State private var editingSample: Message?
     @State private var error: String?
     @State private var editingRevision = "initial"
 
@@ -80,7 +81,8 @@ struct ReminderRulesView: View {
         }.frame(minWidth: 640, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity, alignment: .top)
             .weijiAccent()
             .sheet(item: $editing) { rule in
-                ReminderRuleEditor(rule: rule, preview: { model.onPreviewReminder?($0) }) { updated in
+                ReminderRuleEditor(rule: rule, sample: editingSample, preview: { model.onPreviewReminder?($0) }) {
+                    updated in
                     var next = rules
                     if let index = next.firstIndex(where: { $0.id == updated.id }) {
                         next[index] = updated
@@ -90,7 +92,12 @@ struct ReminderRulesView: View {
                     try model.saveReminderRules(next, expectedRevision: editingRevision)
                 }
             }
-            .onAppear { model.refreshReminderRules() }
+            .onAppear {
+                model.refreshReminderRules()
+                consumeDraft()
+            }
+            .onChange(of: model.reminderDraft) { _, _ in consumeDraft() }
+            .onChange(of: editing) { _, next in if next == nil { consumeDraft() } }
     }
 
     private func update(_ rule: ReminderRule, change: (inout ReminderRule) -> Void) {
@@ -99,7 +106,17 @@ struct ReminderRulesView: View {
         change(&next[index])
         save(next)
     }
+    private func consumeDraft() {
+        guard editing == nil, let draft = model.reminderDraft else { return }
+        editingSample = model.reminderDraftSample
+        model.reminderDraft = nil
+        model.reminderDraftSample = nil
+        model.refreshReminderRules()
+        editingRevision = model.reminderRuleRevision
+        editing = draft
+    }
     private func edit(_ rule: ReminderRule) {
+        editingSample = nil
         model.refreshReminderRules()
         editingRevision = model.reminderRuleRevision
         editing = rule
@@ -114,6 +131,7 @@ struct ReminderRulesView: View {
 
 struct ReminderRuleEditor: View {
     @State var rule: ReminderRule
+    var sample: Message? = nil
     var preview: (ReminderHit) -> Void
     var save: (ReminderRule) throws -> Void
     @Environment(\.dismiss) private var dismiss
@@ -171,6 +189,31 @@ struct ReminderRuleEditor: View {
                 } footer: {
                     Text("会话指通知中的群聊、私聊或频道名称；会话类型填写“群聊”或“私聊”。正则使用 ICU 语法，例如 ^(张三|李四)$；内容按通知原文匹配。")
                 }
+                Section {
+                    Toggle(
+                        "设置安静时段",
+                        isOn: Binding(
+                            get: { rule.quietHours != nil },
+                            set: {
+                                rule.quietHours = $0 ? ReminderQuietHours() : nil
+                            }))
+                    if rule.quietHours != nil {
+                        DatePicker("开始", selection: quietTime(start: true), displayedComponents: .hourAndMinute)
+                        DatePicker("结束", selection: quietTime(start: false), displayedComponents: .hourAndMinute)
+                    }
+                    Picker("同一会话合并间隔", selection: $rule.minimumIntervalSeconds) {
+                        ForEach(
+                            Array(Set([0, 30, 60, 300, 900, 3600, rule.minimumIntervalSeconds])).sorted(), id: \.self
+                        ) { seconds in
+                            Text(seconds == 0 ? "即时提醒" : seconds < 60 ? "\(seconds) 秒" : "\(seconds / 60) 分钟").tag(
+                                seconds)
+                        }
+                    }
+                } header: {
+                    Text("提醒节奏")
+                } footer: {
+                    Text("按 Mac 本地时间生效。安静时段内只存入收件箱，结束后合并提示；间隔内同一规则、同一会话的消息合并提醒，其他会话不受影响。")
+                }
                 Section("测试规则") {
                     TextField("会话 / 频道", text: $conversation, prompt: Text("输入一个示例会话名称"))
                     TextField("发送者", text: $sender, prompt: Text("留空代表通知未提供"))
@@ -216,10 +259,31 @@ struct ReminderRuleEditor: View {
                 }.keyboardShortcut(.defaultAction)
             }.padding(20)
         }.frame(width: 720, height: 680).weijiAccent()
+            .onAppear {
+                if let sample {
+                    conversation = sample.conversationName
+                    sender = sample.senderDisplayName ?? ""
+                    bodyText = sample.body
+                    kind = sample.conversationKind
+                }
+            }
             .onChange(of: rule) { _, _ in invalidateTest() }
             .onChange(of: [conversation, sender, bodyText, kind]) { _, _ in invalidateTest() }
     }
 
+    private func quietTime(start: Bool) -> Binding<Date> {
+        Binding(
+            get: {
+                let minutes = start ? rule.quietHours?.startMinute ?? 1320 : rule.quietHours?.endMinute ?? 480
+                return Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date())
+                    ?? Date()
+            },
+            set: { date in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+                let minute = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+                if start { rule.quietHours?.startMinute = minute } else { rule.quietHours?.endMinute = minute }
+            })
+    }
     private func invalidateTest() {
         revision += 1
         result = nil

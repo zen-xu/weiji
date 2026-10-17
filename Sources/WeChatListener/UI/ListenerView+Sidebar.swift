@@ -5,6 +5,7 @@ extension ListenerView {
         VStack(spacing: 0) {
             List(selection: sidebarSelection) {
                 Section("资料库") {
+                    ReminderSidebarItem(inbox: model.reminderInbox).tag(SidebarSelection.page(.reminders))
                     Label("所有通知", systemImage: "tray").tag(SidebarSelection.page(.archive))
                     Label("微信文件", systemImage: "folder").tag(SidebarSelection.page(.files))
                     Label("目录图片", systemImage: "photo.on.rectangle").tag(SidebarSelection.page(.images))

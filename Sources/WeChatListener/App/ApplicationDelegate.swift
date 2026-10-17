@@ -10,11 +10,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var reminderRulesWindow: NSWindow?
-    private let reminders = ReminderWindowController()
+    private let reminders: ReminderWindowController
     private let reminderPreview = ReminderWindowController()
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
         let model = AppModel(paths: paths, allowNotificationCapture: allowNotificationCapture)
         self.model = model
+        reminders = ReminderWindowController(inbox: model.reminderInbox)
         let source = paths.source
         startup = StartupCoordinator(
             setupCompleted: model.preferences.onboardingCompleted == true,
@@ -101,6 +102,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         model.onStatusChange = { [weak self] in self?.statusItem.button?.toolTip = self?.model.statusText }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onOpenReminderRules = { [weak self] in self?.showReminderRules() }
+        model.onReminderRulesChange = { [weak self] in self?.reminders.synchronize() }
+        reminders.rules = { [weak model] in model?.reminderRules ?? [] }
+        reminders.soundEnabled = { [weak model] in model?.preferences.reminderSound ?? false }
         model.onReminder = { [weak self] hits, sound in self?.reminders.present(hits, sound: sound) }
         model.onPreviewReminder = { [weak self] hit in
             self?.reminderPreview.dismiss()
@@ -109,6 +113,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         reminders.onCountChange = { [weak self] count in
             self?.statusItem.button?.title = count > 0 ? " \(count)" : ""
         }
+        reminders.synchronize()
         reminders.openMessage = { [weak self] message in
             guard let self, self.startup.isReady else { return }
             self.model.page = .archive
@@ -176,7 +181,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         reminderRulesWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-    @objc func showReminders() { reminders.showPending() }
+    @objc func showReminders() {
+        guard startup.isReady else {
+            showWindow()
+            return
+        }
+        model.page = .reminders
+        showWindow()
+    }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(focusSearch) {
             return startup.isReady && [.archive, .files, .images].contains(model.page)
@@ -222,7 +234,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         startup.cancel()
-        reminders.dismiss()
+        reminders.shutDown()
         reminderPreview.dismiss()
         model.stopMCPServer()
         model.shutDown()

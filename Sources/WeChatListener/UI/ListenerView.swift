@@ -41,6 +41,7 @@ struct ListenerView: View {
     @ViewBuilder private var pageContent: some View {
         switch model.page {
         case .archive: MessageArchiveView(model: model)
+        case .reminders: ReminderInboxView(inbox: model.reminderInbox, model: model)
         case .files: FileLibraryView(model: model)
         case .images: ImageLibraryView(model: model)
         case .overview: CollectionOverviewView(model: model)

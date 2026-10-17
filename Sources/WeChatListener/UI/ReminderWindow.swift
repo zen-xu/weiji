@@ -7,47 +7,81 @@ private final class ReminderPanel: NSPanel {
 }
 
 @MainActor
-final class ReminderInbox: ObservableObject {
-    @Published private(set) var hits: [ReminderHit] = []
-    @Published private(set) var overflow = 0
-    @Published var expanded = false
-    var count: Int { hits.count + overflow }
-
-    func append(_ incoming: [ReminderHit]) {
-        for hit in incoming {
-            if let index = hits.firstIndex(where: { $0.id == hit.id }) {
-                for name in hit.ruleNames where !hits[index].ruleNames.contains(name) {
-                    hits[index].ruleNames.append(name)
-                }
-            } else if hits.count < 200 {
-                hits.append(hit)
-            } else {
-                overflow += 1
-            }
+final class ReminderWindowController: NSObject, NSWindowDelegate {
+    let inbox: ReminderInbox
+    var rules: () -> [ReminderRule] = { [] }
+    var soundEnabled: () -> Bool = { false }
+    private var synchronizing = false
+    private var automaticPresentation = true
+    private var wakeObserver: NSObjectProtocol?
+    private var timeZoneObserver: NSObjectProtocol?
+    init(inbox: ReminderInbox? = nil) {
+        self.inbox = inbox ?? ReminderInbox()
+        super.init()
+        self.inbox.onChange = { [weak self] in self?.synchronize() }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.synchronize() }
+        }
+        timeZoneObserver = NotificationCenter.default.addObserver(
+            forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.synchronize() }
         }
     }
-    func clear() {
-        hits = []
-        overflow = 0
-        expanded = false
+    deinit {
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+        if let timeZoneObserver { NotificationCenter.default.removeObserver(timeZoneObserver) }
     }
-}
-
-@MainActor
-final class ReminderWindowController: NSObject, NSWindowDelegate {
-    let inbox = ReminderInbox()
+    func synchronize() {
+        guard !synchronizing else { return }
+        synchronizing = true
+        defer { synchronizing = false }
+        let due = inbox.takeDue(rules: rules())
+        onCountChange?(inbox.count)
+        if !due.isEmpty {
+            display(due, sound: soundEnabled(), showWindow: automaticPresentation)
+        } else if inbox.visibleHits.isEmpty {
+            hide()
+        } else {
+            resize()
+        }
+        snoozeTimer?.invalidate()
+        snoozeTimer = nil
+        if let next = inbox.nextDue {
+            snoozeTimer = Timer.scheduledTimer(withTimeInterval: max(0.1, next.timeIntervalSinceNow), repeats: false) {
+                [weak self] _ in
+                Task { @MainActor in self?.synchronize() }
+            }
+            snoozeTimer?.tolerance = 1
+        }
+    }
+    func shutDown() {
+        hide()
+        snoozeTimer?.invalidate()
+        inbox.flush()
+    }
     private(set) var panel: NSPanel?
     private var lastSound = Date.distantPast
     private var snoozeTimer: Timer?
     private var inWindowsMenu = false
-    private(set) var snoozedUntil: Date?
+    var snoozedUntil: Date? { inbox.snoozedUntil }
     var openMessage: ((Message) -> Void)?
     var onCountChange: ((Int) -> Void)?
 
     func present(_ hits: [ReminderHit], sound: Bool, showWindow: Bool = true) {
         guard !hits.isEmpty else { return }
-        inbox.append(hits)
+        automaticPresentation = showWindow
+        synchronizing = true
+        inbox.append(hits, rules: rules())
+        let due = inbox.takeDue(rules: rules())
+        synchronizing = false
         onCountChange?(inbox.count)
+        if !due.isEmpty { display(due, sound: sound, showWindow: showWindow) }
+        synchronize()
+    }
+    private func display(_ hits: [ReminderHit], sound: Bool, showWindow: Bool) {
         if panel == nil {
             let panel = ReminderPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 380, height: 180),
@@ -84,27 +118,21 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
         }
         resize()
         // Quiet corner prompt: no activation, Dock bounce, or automatic keyboard focus.
-        if showWindow && snoozedUntil == nil { panel?.orderFrontRegardless() }
-        if sound && showWindow && snoozedUntil == nil && Date().timeIntervalSince(lastSound) >= 5 {
+        if showWindow { panel?.orderFrontRegardless() }
+        if sound && showWindow && Date().timeIntervalSince(lastSound) >= 5 {
             NSSound(named: "Glass")?.play()
             lastSound = Date()
         }
     }
     func showPending() {
         guard !inbox.hits.isEmpty else { return }
-        snoozeTimer?.invalidate()
-        snoozedUntil = nil
-        panel?.orderFrontRegardless()
+        inbox.reveal()
+        display(inbox.hits, sound: false, showWindow: true)
     }
     func hide() { panel?.orderOut(nil) }
     func snooze(minutes: Int) {
         hide()
-        snoozeTimer?.invalidate()
-        snoozedUntil = Date().addingTimeInterval(Double(minutes * 60))
-        snoozeTimer = Timer.scheduledTimer(withTimeInterval: Double(minutes * 60), repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.showPending() }
-        }
-        snoozeTimer?.tolerance = 1
+        inbox.snooze(until: Date().addingTimeInterval(Double(minutes * 60)))
     }
     func toggleExpanded() {
         inbox.expanded.toggle()
@@ -115,7 +143,7 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
         let visible =
             panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 1000, height: 700)
-        let preview = String((inbox.hits.last?.message.body ?? "").prefix(500))
+        let preview = String((inbox.visibleHits.last?.message.body ?? "").prefix(500))
         let textHeight = (preview as NSString).boundingRect(
             with: NSSize(width: 352, height: 60), options: [.usesLineFragmentOrigin],
             attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
@@ -132,7 +160,6 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
         hide()
         snoozeTimer?.invalidate()
         snoozeTimer = nil
-        snoozedUntil = nil
         inbox.clear()
         if let panel { NSApp.removeWindowsItem(panel) }
         inWindowsMenu = false
@@ -174,7 +201,7 @@ struct ReminderPromptView: View {
             if inbox.expanded {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        ForEach(inbox.hits.reversed()) { hit in
+                        ForEach(inbox.visibleHits.reversed()) { hit in
                             message(hit, compact: false)
                             Divider()
                         }
@@ -184,7 +211,7 @@ struct ReminderPromptView: View {
                         }
                     }.padding(.horizontal, 14).padding(.vertical, 10)
                 }
-            } else if let hit = inbox.hits.last {
+            } else if let hit = inbox.visibleHits.last {
                 message(hit, compact: true).padding(.horizontal, 14).padding(.vertical, 6)
                 Spacer(minLength: 0)
             }
@@ -195,7 +222,7 @@ struct ReminderPromptView: View {
                     Button("1 小时后提醒") { snooze(60) }
                 }.menuStyle(.borderlessButton).fixedSize()
                 Spacer()
-                Button("全部已读", action: confirm)
+                Button("全部处理", action: confirm)
                     .buttonStyle(.plain).foregroundStyle(AppAppearance.accent)
             }.font(.callout).padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 10)
         }.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

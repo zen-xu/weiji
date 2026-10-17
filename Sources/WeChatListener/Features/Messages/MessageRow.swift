@@ -91,6 +91,13 @@ struct MessageRow: View {
     }
 
     @ViewBuilder private var actions: some View {
+        Menu("创建提醒规则") {
+            ForEach(ReminderQuickRule.Kind.allCases) { kind in
+                Button(kind.label) { model.createReminder(from: message, kind: kind) }
+                    .disabled(ReminderQuickRule.make(message: message, kind: kind) == nil)
+            }
+        }
+        Divider()
         Button("复制正文") { model.copy(presentation.body) }
         Button("复制原始通知正文") { model.copy(message.body) }
         Button("复制结构化 JSON") {

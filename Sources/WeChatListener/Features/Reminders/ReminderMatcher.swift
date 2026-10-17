@@ -1,10 +1,11 @@
 import Foundation
 
-struct ReminderHit: Identifiable {
+struct ReminderHit: Codable, Identifiable {
     var id: String { message.id }
     let message: Message
     var ruleNames: [String]
     var isPreview = false
+    var ruleIDs: [UUID] = []
 }
 
 struct ReminderEvaluation {
@@ -53,12 +54,14 @@ final class ReminderMatcher {
         }
         for message in messages {
             var names: [String] = []
+            var ids: [UUID] = []
             for entry in compiled where !suspended.contains(entry.rule.id) {
                 let key = "\(entry.rule.id)|\(message.id)"
                 guard !deduplicate || !seen.contains(key) else { continue }
                 do {
                     if try matches(message, entry: entry) {
                         names.append(entry.rule.name)
+                        ids.append(entry.rule.id)
                         if deduplicate {
                             seen.insert(key)
                             seenOrder.append(key)
@@ -69,7 +72,7 @@ final class ReminderMatcher {
                     output.issues.append("规则“\(entry.rule.name)”匹配超时或内容过长，已暂停；请简化条件后重新保存。")
                 }
             }
-            if !names.isEmpty { output.hits.append(ReminderHit(message: message, ruleNames: names)) }
+            if !names.isEmpty { output.hits.append(ReminderHit(message: message, ruleNames: names, ruleIDs: ids)) }
         }
         if seenOrder.count > 10_000 {
             let extra = seenOrder.count - 10_000

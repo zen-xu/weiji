@@ -1,6 +1,7 @@
 import Foundation
 
 enum Page: String, CaseIterable, Hashable {
+    case reminders = "提醒收件箱"
     case archive = "消息档案"
     case files = "微信文件"
     case images = "目录图片"

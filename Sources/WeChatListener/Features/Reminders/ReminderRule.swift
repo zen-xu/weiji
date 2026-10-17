@@ -59,6 +59,37 @@ struct ReminderRule: Codable, Identifiable, Equatable {
     var matchAll = true
     var ignoreCase = true
     var conditions = [ReminderCondition()]
+    var quietHours: ReminderQuietHours?
+    var minimumIntervalSeconds = 0
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, isEnabled, matchAll, ignoreCase, conditions, quietHours, minimumIntervalSeconds
+    }
+    init(
+        id: UUID = UUID(), name: String = "", isEnabled: Bool = true, matchAll: Bool = true,
+        ignoreCase: Bool = true, conditions: [ReminderCondition] = [ReminderCondition()],
+        quietHours: ReminderQuietHours? = nil, minimumIntervalSeconds: Int = 0
+    ) {
+        self.id = id
+        self.name = name
+        self.isEnabled = isEnabled
+        self.matchAll = matchAll
+        self.ignoreCase = ignoreCase
+        self.conditions = conditions
+        self.quietHours = quietHours
+        self.minimumIntervalSeconds = minimumIntervalSeconds
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        isEnabled = try c.decode(Bool.self, forKey: .isEnabled)
+        matchAll = try c.decode(Bool.self, forKey: .matchAll)
+        ignoreCase = try c.decode(Bool.self, forKey: .ignoreCase)
+        conditions = try c.decode([ReminderCondition].self, forKey: .conditions)
+        quietHours = try c.decodeIfPresent(ReminderQuietHours.self, forKey: .quietHours)
+        minimumIntervalSeconds = try c.decodeIfPresent(Int.self, forKey: .minimumIntervalSeconds) ?? 0
+    }
 
     var summary: String {
         conditions.map { "\($0.field.label)\($0.comparison.label)“\($0.value)”" }
@@ -66,6 +97,10 @@ struct ReminderRule: Codable, Identifiable, Equatable {
     }
 
     func validate() throws {
+        guard (0...86400).contains(minimumIntervalSeconds) else {
+            throw ListenerError("提醒间隔须在 0–86400 秒之间。")
+        }
+        try quietHours?.validate()
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 80 else {
             throw ListenerError("请填写规则名称，最多 80 个字符。")
         }

@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 
 @MainActor final class AppModel: ObservableObject {
     let paths: AppPaths
+    let reminderInbox: ReminderInbox
+    @Published var reminderDraft: ReminderRule?
+    var reminderDraftSample: Message?
     let worker: LibraryWorker
     let reader: LibraryWorker
     let imageReader: LibraryWorker
@@ -20,6 +23,7 @@ import UniformTypeIdentifiers
     private var reminderFileSignature: String?
     private var reminderMonitor: Timer?
     var onReminder: (([ReminderHit], Bool) -> Void)?
+    var onReminderRulesChange: (() -> Void)?
     var onPreviewReminder: ((ReminderHit) -> Void)?
     var onOpenReminderRules: (() -> Void)?
     private(set) var isShuttingDown = false
@@ -134,6 +138,7 @@ import UniformTypeIdentifiers
 
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
         self.paths = paths
+        reminderInbox = ReminderInbox(paths: paths)
         self.allowNotificationCapture = allowNotificationCapture
         worker = LibraryWorker(paths: paths)
         reader = LibraryWorker(paths: paths, readOnly: true)
@@ -362,6 +367,7 @@ import UniformTypeIdentifiers
         reminderRevision += 1
         reminderIssue = nil
         reminderProcessor.reset()
+        onReminderRulesChange?()
     }
     @discardableResult
     func refreshReminderRules() -> Bool {
@@ -377,6 +383,7 @@ import UniformTypeIdentifiers
                 reminderRevision += 1
                 reminderProcessor.reset()
                 reminderIssue = nil
+                onReminderRulesChange?()
             }
             return true
         } catch {
@@ -417,6 +424,18 @@ import UniformTypeIdentifiers
             if !result.issues.isEmpty { self.reminderIssue = result.issues.joined(separator: "\n") }
             if !result.hits.isEmpty { self.onReminder?(result.hits, self.preferences.reminderSound ?? false) }
         }
+    }
+    func createReminder(from message: Message, kind: ReminderQuickRule.Kind) {
+        guard let draft = ReminderQuickRule.make(message: message, kind: kind) else { return }
+        reminderDraftSample = message
+        reminderDraft = draft
+        onOpenReminderRules?()
+    }
+    func openReminderMessage(_ message: Message) {
+        page = .archive
+        search = ""
+        dateScope = .all
+        selectedID = message.conversationID
     }
     func openSettings() { onOpenSettings?() }
     func showPrivacy() {
@@ -835,7 +854,7 @@ import UniformTypeIdentifiers
         guard !isShuttingDown, !isWorking else { return }
         let alert = NSAlert()
         alert.messageText = "清空本机通知档案？"
-        alert.informativeText = "删除本应用保存的消息、图片预览缓存、文件索引和事件日志，不修改微信、系统通知、原文件或已导出的文件。此操作无法撤销，请先备份。"
+        alert.informativeText = "删除本应用保存的消息、提醒收件箱、图片预览缓存、文件索引和事件日志（保留提醒规则），不修改微信、系统通知、原文件或已导出的文件。此操作无法撤销，请先备份。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "取消")
         alert.addButton(withTitle: "清空档案")
@@ -871,6 +890,9 @@ import UniformTypeIdentifiers
             self.isWorking = false
             switch result {
             case .success:
+                do { try self.reminderInbox.erase() } catch {
+                    self.errorText = "通知档案已清空，但提醒收件箱删除失败，请检查数据目录。"
+                }
                 PreviewImageLoader.clearCache()
                 self.selectedID = nil
                 self.refreshFiles()
@@ -905,6 +927,7 @@ import UniformTypeIdentifiers
     func shutDown() {
         guard !isShuttingDown else { return }
         isShuttingDown = true
+        reminderInbox.flush()
         reminderMonitor?.invalidate()
         reminderMonitor = nil
         captureWork.cancel()
