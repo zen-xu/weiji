@@ -201,8 +201,9 @@ func reminderSchedulingCompatibility() throws {
     #expect(restored.takeDue(rules: [rule], now: now.addingTimeInterval(20)).isEmpty)
     #expect(restored.nextDue == now.addingTimeInterval(300))
     restored.handle()
+    let incoming = (0..<1001).map { inboxHit(rule, id: "bounded-\($0)") }
     let started = ProcessInfo.processInfo.systemUptime
-    restored.append((0..<1001).map { inboxHit(rule, id: "bounded-\($0)") }, rules: [rule], now: now)
+    restored.append(incoming, rules: [rule], now: now)
     let elapsed = ProcessInfo.processInfo.systemUptime - started
     #expect(restored.entries.count == 1000 && restored.overflow == 1)
     #expect(elapsed < 2)
@@ -282,4 +283,12 @@ func reminderSchedulingCompatibility() throws {
     inbox.handleVisible(now: now)
     #expect(inbox.count == 1 && inbox.hits[0].id == later.id)
     #expect(inbox.takeDue(rules: [rule], now: now.addingTimeInterval(300)).count == 1)
+}
+
+@Test("Reminder regex CPU budget excludes waiting for thread scheduling")
+func reminderRegexCPUClock() {
+    let start = ReminderMatcher.threadCPUTime()
+    Thread.sleep(forTimeInterval: 0.06)
+    let cpu = ReminderMatcher.threadCPUTime() - start
+    #expect(cpu >= 0 && cpu < 0.02)
 }

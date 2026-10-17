@@ -205,7 +205,10 @@ struct ReminderRuleEditor: View {
                         ForEach(
                             Array(Set([0, 30, 60, 300, 900, 3600, rule.minimumIntervalSeconds])).sorted(), id: \.self
                         ) { seconds in
-                            Text(seconds == 0 ? "即时提醒" : seconds < 60 ? "\(seconds) 秒" : "\(seconds / 60) 分钟").tag(
+                            Text(
+                                seconds == 0
+                                    ? "即时提醒" : seconds < 60 || seconds % 60 != 0 ? "\(seconds) 秒" : "\(seconds / 60) 分钟"
+                            ).tag(
                                 seconds)
                         }
                     }

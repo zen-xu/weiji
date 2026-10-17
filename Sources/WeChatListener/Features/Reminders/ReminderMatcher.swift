@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct ReminderHit: Codable, Identifiable {
@@ -25,6 +26,10 @@ final class ReminderMatcher {
     private var seen: Set<String> = []
     private var seenOrder: [String] = []
     private let matchBudget: TimeInterval
+
+    static func threadCPUTime() -> TimeInterval {
+        TimeInterval(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1_000_000_000
+    }
 
     init(matchBudget: TimeInterval = 0.02) { self.matchBudget = matchBudget }
 
@@ -97,13 +102,14 @@ final class ReminderMatcher {
         var matched: Bool
         if let expression = entry.expressions[condition.id] {
             guard value.utf16.count <= 32_768 else { throw ListenerError("reminder_input_limit") }
-            let deadline = ProcessInfo.processInfo.systemUptime + matchBudget
+            // Scheduling delays are not regex work: wall time can suspend harmless rules on a busy Mac.
+            let deadline = Self.threadCPUTime() + matchBudget
             var timedOut = false
             matched = false
             expression.enumerateMatches(
                 in: value, options: [.reportProgress], range: NSRange(value.startIndex..., in: value)
             ) { result, _, stop in
-                if ProcessInfo.processInfo.systemUptime >= deadline {
+                if Self.threadCPUTime() >= deadline {
                     timedOut = true
                     stop.pointee = true
                 } else if result != nil {
