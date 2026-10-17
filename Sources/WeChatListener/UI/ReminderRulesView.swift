@@ -63,6 +63,8 @@ struct ReminderRulesView: View {
                 }.listStyle(.inset)
             }
             Divider()
+            ReminderRuleSyncView(sync: model.reminderSync)
+            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 Toggle(
                     "命中时播放提示音",

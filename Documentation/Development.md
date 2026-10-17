@@ -117,3 +117,5 @@ python3 -B Tests/Integration/test_signing_identity.py
 界面布局和交互约定见 [Interface.md](Interface.md)。真实窗口验证受锁屏状态影响时，须明确区分离屏内容截图和实际交互结果。
 
 提醒收件箱由 `AppModel` 持有，生产提示卡片与侧边栏共享同一个实例；规则预览使用独立内存实例。收件箱在主 actor 一次发布批量变更，串行 utility 队列合并过时写任务并原子保存，退出前 flush。`ReminderWindowController` 只维护一个到期计时器；休眠恢复和时区变化会重新核对。匹配与展示策略分离：MCP 示例测试只测条件，不推进实际提醒或冷却状态。规则新字段使用兼容解码；旧 MCP 更新省略节奏参数时保留既有值。
+
+规则同步的 `ReminderRuleSyncState` 使用多值因果寄存器而非时间戳覆盖，保存删除标记并紧凑保留当前版本。`ReminderRuleStore` 将本机规则和因果状态置于同一锁及原子写入中，MCP 输出不暴露内部同步元数据。`ReminderRuleSyncWorker` 在后台使用协调访问处理选定目录及文件冲突，`ReminderRuleSync` 负责书签、监听、请求合并、重试和取消。参见 [iCloud Drive 同步](RuleSync.md)。

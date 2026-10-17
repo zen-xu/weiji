@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 @MainActor final class AppModel: ObservableObject {
     let paths: AppPaths
     let reminderInbox: ReminderInbox
+    let reminderSync: ReminderRuleSync
     @Published var reminderDraft: ReminderRule?
     var reminderDraftSample: Message?
     let worker: LibraryWorker
@@ -139,6 +140,7 @@ import UniformTypeIdentifiers
     init(paths: AppPaths, allowNotificationCapture: Bool = true) {
         self.paths = paths
         reminderInbox = ReminderInbox(paths: paths)
+        reminderSync = ReminderRuleSync(paths: paths)
         self.allowNotificationCapture = allowNotificationCapture
         worker = LibraryWorker(paths: paths)
         reader = LibraryWorker(paths: paths, readOnly: true)
@@ -368,6 +370,7 @@ import UniformTypeIdentifiers
         reminderIssue = nil
         reminderProcessor.reset()
         onReminderRulesChange?()
+        reminderSync.request()
     }
     @discardableResult
     func refreshReminderRules() -> Bool {
@@ -384,6 +387,7 @@ import UniformTypeIdentifiers
                 reminderProcessor.reset()
                 reminderIssue = nil
                 onReminderRulesChange?()
+                reminderSync.request()
             }
             return true
         } catch {
@@ -392,6 +396,8 @@ import UniformTypeIdentifiers
         }
     }
     func startReminderMonitoring() {
+        reminderSync.onRulesChanged = { [weak self] in self?.refreshReminderRules() }
+        reminderSync.start()
         reminderMonitor?.invalidate()
         refreshReminderRules()
         reminderMonitor = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -927,6 +933,7 @@ import UniformTypeIdentifiers
     func shutDown() {
         guard !isShuttingDown else { return }
         isShuttingDown = true
+        reminderSync.stop()
         reminderInbox.flush()
         reminderMonitor?.invalidate()
         reminderMonitor = nil
