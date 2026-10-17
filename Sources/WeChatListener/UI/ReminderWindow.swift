@@ -44,6 +44,10 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
             display(due, sound: soundEnabled(), showWindow: automaticPresentation)
         } else if inbox.visibleHits.isEmpty {
             hide()
+            if let panel, inWindowsMenu {
+                NSApp.removeWindowsItem(panel)
+                inWindowsMenu = false
+            }
         } else {
             resize()
         }
