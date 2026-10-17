@@ -6,7 +6,9 @@
 
 - 默认打包显式使用 SwiftPM `--arch arm64`，去除通用包合并及 Intel runner；签名前和正式打包时均拒绝 Intel、通用或其他架构。下载文件改为 `macos-arm64`，保留原有签名、Bundle ID 和数据兼容性。
 - 旧版本保留既有通用包与标签；已发布版本验证按历史版本使用对应架构和附件名，不能将旧文件混入新版本发布。
-- 本机 Swift 格式、Shell / 工作流语法、12 项发布保护及 8 项签名配置检查通过。实际 release App 构建、严格签名、`lipo -archs` 仅返回 arm64、CLI 版本 0.4.1，以及 stdio / HTTP 合成 MCP 查询均通过。未启动新 GUI 或覆盖安装版；完整 CI 及正式附件下载验证待流水线完成后补记。
+- 本机 Swift 格式、Shell / 工作流语法、12 项发布保护及 8 项签名配置检查通过。实际 release App 构建、严格签名、`lipo -archs` 仅返回 arm64、CLI 版本 0.4.1，以及 stdio / HTTP 合成 MCP 查询均通过。未启动新 GUI 或覆盖安装版。
+- 源码 `ace20da` 的 [主分支 CI](https://github.com/zen-xu/weiji/actions/runs/39024672193) 和 [v0.4.1 发布流水线](https://github.com/zen-xu/weiji/actions/runs/39024853691) 全绿：Apple Silicon 完整 Swift Testing（82 项，含 3 项默认跳过的手动性能基准）、签名及发布保护、真实 stdio / HTTP MCP 与图片检查，以及 macOS 26 窗口几何均通过。正式签名构建通过跨构建身份与 MCP 验证；临时私钥钥匙串清理成功。
+- [v0.4.1 正式附件](https://github.com/zen-xu/weiji/releases/tag/v0.4.1) 已实际下载核验：标题为版本号，ZIP / DMG 使用 `macos-arm64` 文件名；SHA256、manifest 与标签源码、版本 0.4.1 / build 24、仅 arm64、固定 CI 证书、DMG 完整性和与安装版身份匹配全部通过。当前安装版仍为 0.2.1 / build 21，未安装新包。旧 v0.4.0 通用包也使用新脚本实际通过附件、双架构及固定签名验证。
 
 ## iCloud Drive 规则同步（0.4.0 / build 23）
 
