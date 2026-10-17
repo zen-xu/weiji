@@ -48,9 +48,9 @@ jobs:
           RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.RELEASE_CERTIFICATE_PASSWORD }}
           RELEASE_CERTIFICATE_SHA1: ${{ secrets.RELEASE_CERTIFICATE_SHA1 }}
         run: python3 -B Scripts/ci_signing.py install
-      - name: Build and verify universal app
+      - name: Build and verify arm64 app
         run: |
-          bash build.sh --universal
+          bash build.sh
           python3 -B Tests/Integration/test_signing_identity.py
           python3 -B Tests/Integration/test_mcp_queries.py 'dist/微迹.app/Contents/MacOS/WeChatListener'
           python3 -B Tests/Integration/test_mcp_http.py 'dist/微迹.app/Contents/MacOS/WeChatListener'

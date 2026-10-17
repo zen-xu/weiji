@@ -108,9 +108,9 @@ python3 -B Tests/Integration/test_mcp_stdio.py 'dist/微迹.app/Contents/MacOS/W
 python3 -B Tests/Integration/test_signing_identity.py
 ```
 
-`build.sh` 用 SwiftPM 构建 release 产品，将可执行文件和图标复制为 `.app`，然后复用现有的固定证书签名并严格校验。测试通过 `check.sh` 单独执行。Bundle ID、安装路径、数据目录和 MCP 工具保持兼容。
+`build.sh` 用 SwiftPM 显式指定 `--arch arm64` 构建 release 产品，将可执行文件和图标复制为 `.app`，然后复用现有的固定证书签名并严格校验。测试通过 `check.sh` 单独执行。Bundle ID、安装路径、数据目录和 MCP 工具保持兼容。
 
-`bash build.sh --universal` 分别编译 Apple Silicon 和 Intel，再合并为通用二进制后签名。正式版本从 0.1.0 开始，GitHub 自动检查、发布保护条件及 CI 专用固定签名见 [Releasing.md](Releasing.md)。
+从 v0.4.1 起打包与发布仅支持 Apple Silicon（arm64），签名前及正式打包时均检查架构，不再编译或合并 Intel 切片。正式版本从 0.1.0 开始，GitHub 自动检查、发布保护条件及 CI 专用固定签名见 [Releasing.md](Releasing.md)。
 
 首次本机签名配置及授权迁移见 [Signing.md](Signing.md)。`.build/`、`dist/` 和本机签名配置不纳入版本管理。
 

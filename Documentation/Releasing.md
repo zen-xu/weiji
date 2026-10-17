@@ -6,7 +6,7 @@ Release 标题只使用标签版本号，例如 `v0.1.0`，安装说明和变更
 
 ## main 分支保护
 
-待启用规则位于 `.github/main-branch-protection.json`：必须通过 PR，合并前分支保持最新，Apple Silicon / Intel 两项 GitHub Actions 检查通过，讨论已解决；禁止强推和删除，管理员同样受约束。单人维护不要求另一人批准，但不能跳过 PR 和 CI。
+待启用规则位于 `.github/main-branch-protection.json`：必须通过 PR，合并前分支保持最新，Apple Silicon macOS 15 完整检查及 macOS 26 窗口检查通过，讨论已解决；禁止强推和删除，管理员同样受约束。单人维护不要求另一人批准，但不能跳过 PR 和 CI。
 
 2026-10-16 实际查询普通分支保护与 rulesets 均返回 HTTP 403，GitHub 要求升级 Pro 或将仓库公开。当前保留私有，规则尚未生效。升级套餐后可执行：
 
@@ -20,11 +20,11 @@ gh api repos/zen-xu/weiji/branches/main/protection
 
 ## 日常 CI
 
-推送 `main`、创建或更新 PR，以及手动运行 [CI](https://github.com/zen-xu/weiji/actions/workflows/ci.yml) 时，在 Apple Silicon 和 Intel 的 macOS 15 runner 上执行：
+推送 `main`、创建或更新 PR，以及手动运行 [CI](https://github.com/zen-xu/weiji/actions/workflows/ci.yml) 时，在 Apple Silicon 的 macOS 15 runner 上执行：
 
 1. 使用 Xcode 26.2 的 Swift 工具链，校验版本、发布保护条件和 Swift 格式。另在 macOS 26 执行真实 AppKit 窗口尺寸回归，覆盖新系统的托管窗口行为。
 2. 执行完整 Swift Testing、签名配置以及 stdio/HTTP MCP 合成集成检查，不跳过图片检查，不读取真实通知或微信文件。
-3. 生成临时签名的本架构开发 App，并上传 7 天保留的 CI 构建附件。开发附件不应覆盖已授权的固定签名安装版。
+3. 生成临时签名的 arm64 开发 App，并上传 7 天保留的 CI 构建附件。开发附件不应覆盖已授权的固定签名安装版。
 
 PR 检查不读取发布 Secret，工作流默认只有仓库读取权限。Actions 固定完整提交 SHA，Dependabot 每月检查更新。runner 和工具链以实际工作流运行结果为准，参考 [GitHub runner 清单](https://github.com/actions/runner-images/tree/main/images/macos)。
 
@@ -39,12 +39,14 @@ git push origin v0.1.0
 
 下一版本例如 `0.1.1` / build 19，使用新标签 `v0.1.1`；已经发布的标签和资产不可覆盖。首发仍未发布时修正流水线，可在核对远端旧标签后重建首发标签；不能借此修改已发布版本。当前只接受三段稳定版，预发布版本需先扩展校验与发布策略。
 
-[Release](https://github.com/zen-xu/weiji/actions/workflows/release.yml) 先在两种架构上复用完整 CI，再校验标签等于 App 版本、提交属于 main 历史。随后才导入固定发布证书，分别编译 arm64 / x86_64，用 lipo 合并、统一签名，并验证两种架构、证书要求及打包版本。对最终产物再运行 MCP 进程检查与跨构建签名身份检查。
+[Release](https://github.com/zen-xu/weiji/actions/workflows/release.yml) 先复用 Apple Silicon 完整 CI 及 macOS 26 窗口检查，再校验标签等于 App 版本、提交属于 main 历史。随后才导入固定发布证书，仅编译 arm64、统一签名，并严格验证产物只有 arm64 架构、证书要求及打包版本。对最终产物再运行 MCP 进程检查与跨构建签名身份检查。
+
+从 v0.4.1 起仅发布 Apple Silicon（arm64）版本。此前已发布的通用包、标签及附件保留原样；验证命令仍支持这些旧包的双架构和文件名。
 
 发布附件：
 
-- `Weiji-<版本>-macos-universal.dmg`：应用、Applications 快捷入口及安装说明。
-- `Weiji-<版本>-macos-universal.zip`：同一份签名 App。
+- `Weiji-<版本>-macos-arm64.dmg`：应用、Applications 快捷入口及安装说明。
+- `Weiji-<版本>-macos-arm64.zip`：同一份签名 App。
 - `release-manifest.json`：源提交、版本、构建号、架构、最低系统、证书指纹和下载文件摘要。
 - `SHA256SUMS`：ZIP、DMG 和 manifest 的 SHA-256。
 
@@ -66,4 +68,4 @@ ZIP 解压后重新校验签名和版本，DMG 验证完整性。附件齐备且
 
 这是固定的自签项目证书，不是 Apple Developer ID，产物尚未公证。首次打开可能需要在系统设置“隐私与安全性”中允许。从原本机证书切换到 CI 发布证书，需要重新添加一次完全磁盘访问；后续 CI 构建复用同一证书与 Bundle ID，但 TCC 授权保留仍需真实升级验收。不要关闭系统安全检查，也不要用临时签名开发附件覆盖正式安装版。
 
-本机继续 `bash build.sh` 使用原本机证书；`bash build.sh --universal` 生成通用 App。自动发布不安装或重启本机 App，不更改当前安装版、系统权限或已存档通知。
+本机继续 `bash build.sh` 使用原本机证书，仅生成 arm64 App，且签名前检查二进制架构；不再提供 `--universal` 选项。自动发布不安装或重启本机 App，不更改当前安装版、系统权限或已存档通知。

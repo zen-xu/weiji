@@ -46,10 +46,10 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.validate(info={**self.info, "CFBundleIdentifier": "new.identity"})
 
-    def assets(self, root):
-        version = self.info["CFBundleShortVersionString"]
-        for template in release.ASSETS[:2]:
-            (root / template.format(version=version)).write_bytes(b"synthetic-release-only")
+    def assets(self, root, version=None):
+        version = version or self.info["CFBundleShortVersionString"]
+        for name in release.asset_names(version)[:2]:
+            (root / name).write_bytes(b"synthetic-release-only")
         (root / "release-manifest.json").write_text(json.dumps({"version": version, "tag": "v" + version}))
         (root / "SHA256SUMS").write_text("".join(
             f"{release.file_hash(p)}  {p.name}\n" for p in sorted(root.iterdir()) if p.name != "SHA256SUMS"))
@@ -73,6 +73,49 @@ class ReleaseTests(unittest.TestCase):
             original = (root / "SHA256SUMS").read_text()
             for extra in [original.splitlines()[0] + "\n", "0" * 64 + "  ../outside.zip\n"]:
                 (root / "SHA256SUMS").write_text(original + extra)
+                with self.assertRaises(ValueError):
+                    release.verified_assets(root, version)
+
+    def test_new_releases_reject_intel_and_universal_binaries_before_execution(self):
+        version = self.info["CFBundleShortVersionString"]
+        with tempfile.TemporaryDirectory() as temporary:
+            app = pathlib.Path(temporary) / "fixture.app"
+            (app / "Contents").mkdir(parents=True)
+            (app / "Contents/Info.plist").write_bytes(plistlib.dumps(self.info))
+            for architectures in ["x86_64", "arm64 x86_64", "arm64e", ""]:
+                with self.subTest(architectures=architectures), \
+                     mock.patch.object(release, "run", return_value=architectures) as command:
+                    with self.assertRaisesRegex(ValueError, "architectures must be exactly"):
+                        release.verify_app(app, "v" + version)
+                    command.assert_called_once()
+
+    def test_arm64_and_historical_universal_signature_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = pathlib.Path(temporary) / "fixture.app"
+            (app / "Contents").mkdir(parents=True)
+            for version, architectures, current in [
+                (self.info["CFBundleShortVersionString"], "arm64", True),
+                ("0.4.0", "arm64 x86_64", False),
+            ]:
+                info = {**self.info, "CFBundleShortVersionString": version}
+                (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
+                with mock.patch.object(release, "run", side_effect=[architectures, version, ""]) as command:
+                    actual, slices, _ = release.verify_app(app, "v" + version, match_source=current)
+                    self.assertEqual(actual, info)
+                    self.assertEqual(slices, architectures.split())
+                    self.assertIn("--all-architectures", command.call_args.args[0])
+                    self.assertTrue(any("certificate root" in arg for arg in command.call_args.args[0]))
+
+    def test_historical_asset_names_remain_verifiable_but_cannot_replace_arm64(self):
+        for version in ["0.1.0", "0.4.0", self.info["CFBundleShortVersionString"], "0.10.0", "1.0.0"]:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                self.assets(root, version)
+                paths = release.verified_assets(root, version)
+                architecture = "universal" if version in ["0.1.0", "0.4.0"] else "arm64"
+                self.assertEqual(paths[0].name, f"Weiji-{version}-macos-{architecture}.zip")
+                other = "arm64" if architecture == "universal" else "universal"
+                paths[0].rename(root / paths[0].name.replace(architecture, other))
                 with self.assertRaises(ValueError):
                     release.verified_assets(root, version)
 

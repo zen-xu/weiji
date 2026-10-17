@@ -3,7 +3,6 @@
     "strict": true,
     "checks": [
       { "context": "Check (macos-15)", "app_id": 15368 },
-      { "context": "Check (macos-15-intel)", "app_id": 15368 },
       { "context": "Window layout (macOS 26)", "app_id": 15368 }
     ]
   },
