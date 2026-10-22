@@ -35,6 +35,8 @@
 
 消息右键或“…”菜单可从会话、发送者及 @所有人快速预填规则。每条规则支持跨午夜安静时段和同一会话合并间隔，默认保持即时提醒。
 
+支持 **Agent 主动提醒**：agent 定时查阅通知档案并理解需求后，可调用 MCP `wechat_create_reminder` 或本机 HTTP `POST /api/reminders`，由微迹展示角落卡片并保存到提醒收件箱，无需预设匹配规则。HTTP 使用独立令牌；接口支持持久化与请求去重。入口为“API 与 Agent”，调度和判断由外部 agent 负责，详见 [调用方式与边界](Documentation/MCP.md#agent-主动提醒-http-api)。
+
 支持让 AI 通过 MCP 查看、示例测试、保存及删除规则，App 约 2 秒内同步；已有六个通知/文件工具保持只读。规则写入带版本检查，不会修改磁盘权限或开启采集。示例、MCP 参数及数据边界见 [提醒规则](Documentation/Reminders.md)。
 
 规则支持 [iCloud Drive 同步](Documentation/RuleSync.md)：每台 Mac 在规则页开启并选择同一个 iCloud Drive 文件夹，自动合并独立修改、同步删除，并保留停用的冲突副本。默认关闭，仅同步规则，不上传消息或收件箱；沿用现有固定签名。

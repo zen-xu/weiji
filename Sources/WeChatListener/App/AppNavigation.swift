@@ -6,7 +6,7 @@ enum Page: String, CaseIterable, Hashable {
     case files = "微信文件"
     case images = "目录图片"
     case overview = "采集状态"
-    case mcp = "连接 Codex"
+    case mcp = "API 与 Agent"
 }
 enum DateScope: String, CaseIterable {
     case all = "全部时间"

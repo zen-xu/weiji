@@ -252,7 +252,7 @@ struct ReminderPromptView: View {
             HStack {
                 Text(hit.ruleNames.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                if !hit.isPreview {
+                if !hit.isPreview && hit.message.source != "agent_reminder" {
                     Button("查看会话") { openMessage(hit.message) }.buttonStyle(.plain).font(.caption)
                         .foregroundStyle(AppAppearance.accent)
                 }

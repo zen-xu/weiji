@@ -50,7 +50,9 @@ struct ReminderInboxView: View {
                             Text(entry.hit.ruleNames.joined(separator: "、")).font(.caption).foregroundStyle(.secondary)
                                 .lineLimit(1)
                             Spacer()
-                            Button("查看会话") { model.openReminderMessage(entry.hit.message) }.buttonStyle(.borderless)
+                            if entry.hit.message.source != "agent_reminder" {
+                                Button("查看会话") { model.openReminderMessage(entry.hit.message) }.buttonStyle(.borderless)
+                            }
                             if entry.isHandled {
                                 Button("恢复未处理") { inbox.restore(entry.id) }.buttonStyle(.borderless)
                             } else {

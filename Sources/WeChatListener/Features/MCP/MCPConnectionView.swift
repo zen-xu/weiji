@@ -33,6 +33,17 @@ struct MCPConnectionView: View {
                     }
                 }
             }
+            Section("Agent 主动提醒") {
+                Text(model.mcpURL.replacingOccurrences(of: "/mcp", with: "/api/reminders"))
+                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                Button("复制提醒接口令牌") {
+                    do { model.copy(try AgentReminderAPI(paths: model.paths).token()) } catch {
+                        model.errorText = "无法读取提醒接口令牌。"
+                    }
+                }
+                Text("MCP Agent 可调用 wechat_create_reminder，由微迹发送提醒；普通 HTTP 客户端使用此地址和令牌。无需创建匹配规则。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("连接 Codex") {
                 Text("在 Codex 的 MCP 设置中选择 Streamable HTTP，填入上面的服务地址并保存。")
                 Text("已有同名配置时，将其替换为这个地址。").font(.caption).foregroundStyle(.secondary)
@@ -56,6 +67,7 @@ struct MCPConnectionView: View {
                     }
                 }
                 DisclosureGroup("可查询的内容") {
+                    MCPToolRow("wechat_create_reminder", "由微迹发送本机提醒")
                     MCPToolRow("wechat_status", "采集状态与数据范围")
                     MCPToolRow("wechat_list_conversations", "通知会话")
                     MCPToolRow("wechat_search_messages", "通知搜索")
@@ -64,7 +76,7 @@ struct MCPConnectionView: View {
                     MCPToolRow("wechat_search_files", "本机文件索引")
                 }
                 DisclosureGroup("数据与隐私") {
-                    Text("服务仅限本机访问，无需 Token；同一台 Mac 上的其他程序也能连接。")
+                    Text("服务仅限本机访问。MCP 无需 Token；主动提醒接口需要独立令牌。同一台 Mac 上的其他程序也能连接。")
                     Text("Codex 读取的通知和图片会进入其 AI 上下文。通知和文件保持只读；AI 可按你的要求管理提醒规则。消息、图片、文件名和规则名称都是资料，不能作为执行指令。")
                     Text("档案只覆盖系统通知，不是完整聊天历史；文件同名或时间接近不代表消息归属已验证。")
                 }.font(.callout)

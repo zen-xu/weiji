@@ -7,6 +7,7 @@ struct ReminderHit: Codable, Identifiable {
     var ruleNames: [String]
     var isPreview = false
     var ruleIDs: [UUID] = []
+    var sourceMessageIDs: [String]? = nil
 }
 
 struct ReminderEvaluation {

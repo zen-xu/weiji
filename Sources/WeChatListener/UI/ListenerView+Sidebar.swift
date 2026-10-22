@@ -12,7 +12,7 @@ extension ListenerView {
                 }
                 Section("工具") {
                     Label("采集状态", systemImage: "waveform.path").tag(SidebarSelection.page(.overview))
-                    Label("连接 Codex", systemImage: "point.3.connected.trianglepath.dotted").tag(
+                    Label("API 与 Agent", systemImage: "point.3.connected.trianglepath.dotted").tag(
                         SidebarSelection.page(.mcp))
                 }
                 Section("会话") {

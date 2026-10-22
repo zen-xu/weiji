@@ -207,8 +207,8 @@ func archiveIntegration() throws {
         "MCP protocol initialization")
     let list = rpc(3, "tools/list")["result"] as! [String: Any]
     try #require(
-        (list["tools"] as? [[String: Any]])?.count == 10,
-        "MCP retains six read-only data tools and adds four scoped reminder tools")
+        (list["tools"] as? [[String: Any]])?.count == 11,
+        "MCP retains six read-only data tools and adds five scoped reminder tools")
     let tool =
         rpc(4, "tools/call", ["name": "wechat_search_messages", "arguments": ["query": "报价"]])["result"]
         as! [String: Any]
