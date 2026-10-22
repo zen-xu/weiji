@@ -114,6 +114,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             self?.statusItem.button?.title = count > 0 ? " \(count)" : ""
         }
         reminders.synchronize()
+        reminders.openInbox = { [weak self] in self?.showReminders() }
         reminders.openMessage = { [weak self] message in
             guard let self, self.startup.isReady else { return }
             self.model.page = .archive

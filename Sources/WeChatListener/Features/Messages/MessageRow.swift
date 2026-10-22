@@ -5,9 +5,12 @@ struct MessageRow: View {
     @ObservedObject var model: AppModel
     @State private var showingOriginal = false
     private var presentation: MessagePresentation { message.presentation }
-    private var showsConversation: Bool {
-        model.selectedID == nil
-            && (presentation.isGroup || presentation.isInferredGroup || presentation.sender != message.displayName)
+    private var sender: String? {
+        guard let sender = presentation.sender, !sender.isEmpty, sender != message.displayName else { return nil }
+        return sender
+    }
+    private var heading: String {
+        model.selectedID == nil ? message.displayName : sender ?? message.displayName
     }
     private func showConversation() {
         model.page = .archive
@@ -16,44 +19,8 @@ struct MessageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if showsConversation {
-                Button(action: showConversation) {
-                    Label(
-                        message.displayName,
-                        systemImage: presentation.isGroup || presentation.isInferredGroup ? "person.2" : "bubble.left")
-                }
-                .buttonStyle(.plain).foregroundStyle(AppAppearance.accent).font(.caption).lineLimit(1)
-                .help("查看此会话").accessibilityHint("筛选到此会话的通知")
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(message.platformName).font(.caption2).foregroundStyle(.secondary)
-                if model.selectedID == nil && !showsConversation {
-                    Button(presentation.sender ?? message.displayName, action: showConversation)
-                        .buttonStyle(.plain).font(.headline).help("查看此会话")
-                } else {
-                    Text(presentation.sender ?? "发送者未提供").font(.headline).textSelection(.enabled)
-                }
-                if presentation.senderSource == "body_prefix_inferred" {
-                    Text("正文推测").font(.caption2).foregroundStyle(.secondary)
-                        .help("根据通知中的昵称前缀展示，发送者身份未验证。")
-                }
-                Spacer(minLength: 8)
-                Text(message.date.formatted(date: .omitted, time: .shortened))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    .help(message.date.formatted(date: .complete, time: .standard))
-                Menu {
-                    actions
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .frame(minWidth: 24, minHeight: 24)
-                .help("通知操作").accessibilityLabel("通知操作")
-            }
-            Text(presentation.body.isEmpty ? "通知未提供正文" : presentation.body)
-                .font(.body).lineSpacing(4).textSelection(.enabled)
-                .foregroundStyle(presentation.body.isEmpty ? .secondary : .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            header
+            LongNotificationBody(message: message, text: presentation.body)
             if let files = model.messageFiles[message.id], !files.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("同名文件 · 归属未验证").font(.caption).foregroundStyle(.secondary)
@@ -73,7 +40,7 @@ struct MessageRow: View {
                 Text("已更新").font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
         .contextMenu { actions }
         .popover(isPresented: $showingOriginal, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 12) {
@@ -88,6 +55,45 @@ struct MessageRow: View {
                 Text("消息 ID").font(.caption).foregroundStyle(.secondary)
                 Text(message.id).font(.system(.caption2, design: .monospaced))
             }.textSelection(.enabled).padding(20).frame(width: 400)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    if model.selectedID == nil {
+                        Button(heading, action: showConversation)
+                            .buttonStyle(.plain).font(.system(size: 13, weight: .semibold))
+                            .help("查看此会话").accessibilityHint("筛选到此会话的通知")
+                    } else {
+                        Text(heading).font(.system(size: 13, weight: .semibold)).textSelection(.enabled)
+                    }
+                    NotificationSourceBadge(message: message)
+                }
+                if model.selectedID == nil, let sender {
+                    HStack(spacing: 5) {
+                        Text(sender).font(.system(size: 11)).foregroundStyle(.secondary)
+                        if presentation.senderSource == "body_prefix_inferred" {
+                            Image(systemName: "info.circle").font(.system(size: 10)).foregroundStyle(.tertiary)
+                                .help("发送者根据正文前缀推测，身份未验证。")
+                                .accessibilityLabel("发送者为正文推测")
+                        }
+                    }
+                } else if presentation.senderSource == "body_prefix_inferred" {
+                    Text("发送者为正文推测").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Text(message.date.formatted(date: .omitted, time: .shortened))
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                .padding(.top, 2).help(message.date.formatted(date: .complete, time: .standard))
+            Menu {
+                actions
+            } label: {
+                Image(systemName: "ellipsis").frame(width: 20, height: 20)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("通知操作").accessibilityLabel("通知操作")
         }
     }
 

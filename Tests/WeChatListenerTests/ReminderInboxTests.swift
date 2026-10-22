@@ -292,3 +292,28 @@ func reminderRegexCPUClock() {
     let cpu = ReminderMatcher.threadCPUTime() - start
     #expect(cpu >= 0 && cpu < 0.02)
 }
+
+@Test("Acknowledging one floating reminder leaves the others visible and never resurfaces the same event")
+@MainActor func reminderAcknowledgeOne() throws {
+    let root = try TestSupport.makeDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = AppPaths(override: root.path)
+    let rule = ReminderRule(name: "查收测试", conditions: [ReminderCondition(value: "通知")])
+    let hits = ["first", "second", "third"].map { inboxHit(rule, id: $0) }
+    let inbox = ReminderInbox(paths: paths)
+    inbox.append(hits, rules: [rule], now: TestSupport.referenceDate)
+    _ = inbox.takeDue(rules: [rule], now: TestSupport.referenceDate)
+    inbox.handle(hits[1].id, now: TestSupport.referenceDate)
+    #expect(inbox.visibleHits.map(\.id) == [hits[0].id, hits[2].id])
+    #expect(inbox.count == 2)
+    inbox.flush()
+    let restored = ReminderInbox(paths: paths)
+    restored.append([hits[1]], rules: [rule], now: TestSupport.referenceDate.addingTimeInterval(10))
+    #expect(restored.visibleHits.map(\.id) == [hits[0].id, hits[2].id])
+    #expect(restored.entries.first(where: { $0.id == hits[1].id })?.isHandled == true)
+    let fresh = inboxHit(rule, id: "new-message-same-conversation")
+    restored.append([fresh], rules: [rule], now: TestSupport.referenceDate.addingTimeInterval(20))
+    #expect(restored.count == 3)
+    #expect(restored.visibleHits.contains(where: { $0.id == fresh.id }))
+    restored.flush()
+}

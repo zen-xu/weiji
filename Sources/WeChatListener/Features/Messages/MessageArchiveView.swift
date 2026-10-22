@@ -66,10 +66,12 @@ struct MessageArchiveView: View {
                             if index == 0
                                 || !Calendar.current.isDate(message.date, inSameDayAs: messages[index - 1].date)
                             {
-                                Text(dayTitle(message.date)).font(.subheadline.weight(.semibold)).foregroundStyle(
-                                    .secondary
-                                )
-                                .padding(.top, index == 0 ? 8 : 20).padding(.bottom, 4)
+                                HStack(spacing: 12) {
+                                    Text(dayTitle(message.date)).font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary).fixedSize()
+                                    Rectangle().fill(Color(nsColor: .separatorColor).opacity(0.4)).frame(height: 0.5)
+                                }
+                                .padding(.top, index == 0 ? 16 : 24).padding(.bottom, 2)
                             } else {
                                 Divider()
                             }
