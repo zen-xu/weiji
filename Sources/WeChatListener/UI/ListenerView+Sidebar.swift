@@ -16,26 +16,7 @@ extension ListenerView {
                         SidebarSelection.page(.mcp))
                 }
                 ForEach(NotificationPlatform.allCases) { platform in
-                    Section(platform.name + "会话") {
-                        ForEach(model.conversations.filter { $0.platform == platform }) { conversation in
-                            HStack(spacing: 8) {
-                                Label(
-                                    conversation.displayName,
-                                    systemImage: conversation.showsGroupIcon ? "person.2" : "bubble.left"
-                                )
-                                .lineLimit(1).truncationMode(.middle)
-                                Spacer(minLength: 0)
-                                Text(conversation.count.formatted()).font(.caption.monospacedDigit()).foregroundStyle(
-                                    .secondary)
-                            }
-                            .help(platform.name + " · " + conversation.kindLabel + " · " + conversation.displayName)
-                            .accessibilityElement(children: .combine)
-                            .tag(SidebarSelection.conversation(conversation.id))
-                        }
-                        if !model.conversations.contains(where: { $0.platform == platform }) {
-                            Text("暂无" + platform.name + "通知会话").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
+                    conversationSection(platform)
                 }
             }
             .listStyle(.sidebar)
@@ -56,6 +37,33 @@ extension ListenerView {
                     .buttonStyle(.borderless).help("设置…（⌘,）").accessibilityLabel("设置")
             }
         }
+    }
+
+    private func conversationSection(_ platform: NotificationPlatform) -> some View {
+        let conversations = model.conversations.filter { $0.platform == platform }
+        return Section(platform.name + "会话") {
+            ForEach(conversations) { conversation in
+                conversationRow(conversation)
+                    .tag(SidebarSelection.conversation(conversation.id))
+            }
+            if conversations.isEmpty {
+                Text("暂无" + platform.name + "通知会话").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func conversationRow(_ conversation: Conversation) -> some View {
+        HStack(spacing: 8) {
+            Label(
+                conversation.displayName,
+                systemImage: conversation.showsGroupIcon ? "person.2" : "bubble.left"
+            )
+            .lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 0)
+            Text(conversation.count.formatted()).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .help(conversation.platform.name + " · " + conversation.kindLabel + " · " + conversation.displayName)
+        .accessibilityElement(children: .combine)
     }
 
     private var sidebarSelection: Binding<SidebarSelection?> {
