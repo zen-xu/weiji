@@ -19,6 +19,7 @@ enum CommandLineInterface {
             var value = [String: Any]()
             for (flag, key) in [
                 ("--query", "query"), ("--conversation", "conversation_id"), ("--from", "from"), ("--to", "to"),
+                ("--source", "source"),
             ] {
                 if let text = try option(flag) { value[key] = text }
             }
@@ -60,6 +61,7 @@ enum CommandLineInterface {
             values.removeValue(forKey: "conversation_id")
             values.removeValue(forKey: "from")
             values.removeValue(forKey: "to")
+            values.removeValue(forKey: "source")
             try writeJSON(service.call("wechat_search_files", arguments: values))
         case "scan-files":
             guard let directory = try option("--directory") else {
@@ -94,8 +96,14 @@ enum CommandLineInterface {
                 "failed": result.failed, "journal_error": result.journalError,
             ])
         case "source-status":
-            let count = try NotificationSource(url: paths.source).snapshot().count
-            try writeJSON(["readable": true, "wechat_notifications": count, "content_printed": false])
+            let rows = try NotificationSource(url: paths.source).snapshot()
+            let counts = Dictionary(grouping: rows, by: { $0.string("app_bundle_id") ?? "" }).mapValues(\.count)
+            try writeJSON([
+                "readable": true, "notifications": rows.count,
+                "wechat_notifications": counts[NotificationPlatform.wechat.bundleID] ?? 0,
+                "feishu_notifications": counts[NotificationPlatform.feishu.bundleID] ?? 0,
+                "content_printed": false,
+            ])
         case "--version": print(ApplicationInfo.version)
         case "--self-test": throw ListenerError("自测已移至独立测试目标，请运行 bash Scripts/test.sh。")
         case "--help", "help":
@@ -106,13 +114,14 @@ enum CommandLineInterface {
                 mcp-http [--port 18765]：独立运行本地 HTTP MCP 服务（档案只读，可管理提醒规则）
                 mcp：兼容旧版 MCP stdio 接入
                 status | conversations [--query 名称] | search [--query 关键词] [--conversation ID]
+                conversations / search 可传 --source wechat|feishu，省略为全部来源
                 search 还支持 --from YYYY-MM-DD --to YYYY-MM-DD --limit 1..200 --offset N
                 context --message ID [--radius 0..20]
                 import --input JSONL文件或旧数据目录
                 scan-files --directory 微信账号目录：只读探测文件，更新本机索引并生成图片预览
                 files [--query 文件名]：查询已探测的普通文件，不读取内容
                 source-status：只检查系统通知访问权限与数量
-                capture-once：读取一次当前系统保留的微信通知并保存
+                capture-once：读取一次当前系统保留的微信和飞书通知文字并保存
                 --demo --data-dir 目录：使用独立合成数据打开界面
                 所有命令支持 --data-dir 目录。通知档案不等于完整聊天记录。
                 """)

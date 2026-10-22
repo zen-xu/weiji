@@ -7,4 +7,5 @@ struct MessageFilter {
     var before: String?
     var limit = 100
     var offset = 0
+    var platform: NotificationPlatform?
 }

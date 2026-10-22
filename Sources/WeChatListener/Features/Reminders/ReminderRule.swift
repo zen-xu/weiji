@@ -61,14 +61,16 @@ struct ReminderRule: Codable, Identifiable, Equatable {
     var conditions = [ReminderCondition()]
     var quietHours: ReminderQuietHours?
     var minimumIntervalSeconds = 0
+    var sources: [NotificationPlatform] = [.wechat]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, isEnabled, matchAll, ignoreCase, conditions, quietHours, minimumIntervalSeconds
+        case id, name, isEnabled, matchAll, ignoreCase, conditions, quietHours, minimumIntervalSeconds, sources
     }
     init(
         id: UUID = UUID(), name: String = "", isEnabled: Bool = true, matchAll: Bool = true,
         ignoreCase: Bool = true, conditions: [ReminderCondition] = [ReminderCondition()],
-        quietHours: ReminderQuietHours? = nil, minimumIntervalSeconds: Int = 0
+        quietHours: ReminderQuietHours? = nil, minimumIntervalSeconds: Int = 0,
+        sources: [NotificationPlatform] = [.wechat]
     ) {
         self.id = id
         self.name = name
@@ -78,6 +80,7 @@ struct ReminderRule: Codable, Identifiable, Equatable {
         self.conditions = conditions
         self.quietHours = quietHours
         self.minimumIntervalSeconds = minimumIntervalSeconds
+        self.sources = sources
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -89,6 +92,7 @@ struct ReminderRule: Codable, Identifiable, Equatable {
         conditions = try c.decode([ReminderCondition].self, forKey: .conditions)
         quietHours = try c.decodeIfPresent(ReminderQuietHours.self, forKey: .quietHours)
         minimumIntervalSeconds = try c.decodeIfPresent(Int.self, forKey: .minimumIntervalSeconds) ?? 0
+        sources = try c.decodeIfPresent([NotificationPlatform].self, forKey: .sources) ?? [.wechat]
     }
 
     var summary: String {
@@ -97,6 +101,7 @@ struct ReminderRule: Codable, Identifiable, Equatable {
     }
 
     func validate() throws {
+        guard !sources.isEmpty, Set(sources).count == sources.count else { throw ListenerError("至少选择一个通知来源，且不能重复。") }
         guard (0...86400).contains(minimumIntervalSeconds) else {
             throw ListenerError("提醒间隔须在 0–86400 秒之间。")
         }

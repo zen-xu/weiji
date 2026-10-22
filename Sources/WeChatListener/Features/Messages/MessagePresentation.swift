@@ -23,6 +23,8 @@ struct MessagePresentation: Codable, Equatable {
         isGroup = message.conversationKind == "group"
         isInferredGroup = false
         kindLabel = message.kindLabel
+        // Feishu notifications are grouped by their supplied title; do not apply WeChat sender heuristics.
+        guard message.notificationPlatform == .wechat else { return }
         if message.conversationKind == "direct" {
             sender = message.senderDisplayName ?? message.displayName
             senderSource = "notification_title"

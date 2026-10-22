@@ -8,6 +8,12 @@ enum NotificationDecoder {
         else {
             throw ListenerError("通知字段格式尚未适配，未猜测正文。")
         }
+        guard
+            let platform = NotificationPlatform.platform(
+                for: row.string("app_bundle_id") ?? NotificationPlatform.wechat.bundleID)
+        else {
+            throw ListenerError("不支持的通知来源。")
+        }
         var info = [String: Any]()
         if let archive = request["usda"] as? Data, archive.count <= 1_000_000,
             let reader = try? NSKeyedUnarchiver(forReadingFrom: archive)
@@ -22,8 +28,8 @@ enum NotificationDecoder {
         } else if let dictionary = request["usda"] as? [String: Any] {
             info = dictionary
         }
-        let chat = info["chatname"] as? String
-        let unique = info["unique_id"] as? String
+        let chat = platform == .wechat ? info["chatname"] as? String : nil
+        let unique = platform == .wechat ? info["unique_id"] as? String : nil
         let uuid = row.data("uuid") ?? plist["uuid"] as? Data
         let identity =
             nonempty(unique) ?? uuid.flatMap { $0.isEmpty ? nil : $0.base64EncodedString() }
@@ -38,18 +44,20 @@ enum NotificationDecoder {
         return make(
             record: record, title: request["titl"] as? String ?? "",
             subtitle: request["subt"] as? String ?? "", body: request["body"] as? String ?? "",
-            chat: chat, identity: identity, delivered: delivered, captured: now)
+            chat: chat, identity: identity, delivered: delivered, captured: now, platform: platform)
     }
     static func nonempty(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
     static func make(
         record: Int64, title: String, subtitle: String, body: String, chat: String? = nil,
-        identity: String? = nil, delivered: Date?, captured: Date
+        identity: String? = nil, delivered: Date?, captured: Date, platform: NotificationPlatform = .wechat
     ) -> Message {
-        let chat = nonempty(chat)
-        let sourceKey = digest("record:\(record)|time:\(Int64((delivered ?? captured).timeIntervalSince1970))")
-        let id = digest("wechat-notification-v1|\(identity ?? sourceKey)")
+        let chat = platform == .wechat ? nonempty(chat) : nil
+        let sourceNamespace = platform == .wechat ? "" : "\(platform.rawValue)|"
+        let sourceKey = digest(
+            "\(sourceNamespace)record:\(record)|time:\(Int64((delivered ?? captured).timeIntervalSince1970))")
+        let id = digest("\(platform.rawValue)-notification-v1|\(identity ?? sourceKey)")
         let kind = chat.map { $0.hasSuffix("@chatroom") ? "group" : "direct" } ?? "unknown"
-        let conversationID = digest("wechat-conversation-v1|\(chat ?? "title-fallback:" + title)")
+        let conversationID = digest("\(platform.rawValue)-conversation-v1|\(chat ?? "title-fallback:" + title)")
         let sender = kind == "direct" ? nonempty(title) : nonempty(subtitle)
         let at = Dates.string(captured)
         return Message(
@@ -58,10 +66,10 @@ enum NotificationDecoder {
             conversationIDSource: chat == nil ? "display_title_fallback" : "notification_chatname",
             senderDisplayName: sender, title: title, subtitle: subtitle, body: body,
             deliveredAt: delivered.map(Dates.string), capturedAt: at, updatedAt: at,
-            appBundleID: "com.tencent.xinwechat", sourceRecordID: record,
+            appBundleID: platform.bundleID, sourceRecordID: record,
             notificationIdentity: identity.map { digest($0) }, sourceKey: sourceKey,
             contentHash: digest(
                 [title, subtitle, body, chat ?? "", delivered.map(Dates.string) ?? ""].joined(separator: "\u{0}")),
-            mediaDirectoryID: chat.map { mediaDirectoryID($0) })
+            mediaDirectoryID: platform == .wechat ? chat.map { mediaDirectoryID($0) } : nil)
     }
 }

@@ -9,5 +9,6 @@ struct Conversation: Identifiable {
     var lastAt: String
     var count: Int
     var inferredGroup = false
+    var platform: NotificationPlatform = .wechat
     var kindLabel: String { kind == "group" ? "群聊" : kind == "direct" ? "私聊" : inferredGroup ? "疑似群聊" : "通知分组" }
 }

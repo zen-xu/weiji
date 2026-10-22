@@ -152,7 +152,7 @@ extension Archive {
             try database.rows("SELECT COUNT(*) AS n FROM discovered_files WHERE \(clause)", args).first?.int("n") ?? 0)
     }
     func fileCandidates(for message: Message) throws -> [[String: Any]] {
-        guard let name = message.notifiedFileName else { return [] }
+        guard message.notificationPlatform == .wechat, let name = message.notifiedFileName else { return [] }
         let files = try discoveredFiles(name: name, limit: 20)
         let count = try discoveredFileCount(name: name)
         return try files.sorted {

@@ -26,6 +26,7 @@ struct MessageRow: View {
                 .help("查看此会话").accessibilityHint("筛选到此会话的通知")
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(message.platformName).font(.caption2).foregroundStyle(.secondary)
                 if model.selectedID == nil && !showsConversation {
                     Button(presentation.sender ?? message.displayName, action: showConversation)
                         .buttonStyle(.plain).font(.headline).help("查看此会话")

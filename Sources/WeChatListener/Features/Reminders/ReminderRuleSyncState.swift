@@ -116,7 +116,7 @@ struct ReminderRuleSyncState: Codable, Equatable {
 extension ReminderRule {
     /// Ignore ephemeral condition IDs so older MCP clients do not create false conflicts on every save.
     func hasSameContent(as other: Self) -> Bool {
-        name == other.name && isEnabled == other.isEnabled && matchAll == other.matchAll
+        sources == other.sources && name == other.name && isEnabled == other.isEnabled && matchAll == other.matchAll
             && ignoreCase == other.ignoreCase && quietHours == other.quietHours
             && minimumIntervalSeconds == other.minimumIntervalSeconds && conditions.count == other.conditions.count
             && zip(conditions, other.conditions).allSatisfy {

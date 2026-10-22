@@ -8,10 +8,15 @@ struct QueryService {
             "read_only": true, "data_directory": paths.root.path,
             "timezone": TimeZone.current.identifier, "current_time": Dates.string(Date()),
             "reminder_configuration_writable": true,
+            "supported_sources": NotificationPlatform.allCases.map {
+                ["source": $0.rawValue, "name": $0.name, "app_bundle_id": $0.bundleID]
+            },
             "agent_reminders": [
-                "provider": "微迹", "mcp_tool": "wechat_create_reminder",
-                "http_path": "/api/reminders", "http_auth": "Bearer token from App",
-                "guidance": "需要由微迹提醒时调用 wechat_create_reminder；不要以 agent 回复或自身通知代替。成功表示已入队，不代表已展示。定时查询由 agent 调度器负责。",
+                "provider": "微迹", "mcp_tool": "create_reminder",
+                "http_path": "/api/reminders",
+                "http_auth": try AgentReminderAPI(paths: paths).requiresToken()
+                    ? "Bearer token from App" : "none (loopback only)",
+                "guidance": "需要由微迹提醒时调用 create_reminder；不要以 agent 回复或自身通知代替。成功表示已入队，不代表已展示。定时查询由 agent 调度器负责。",
             ],
         ]
         if FileManager.default.fileExists(atPath: paths.database.path) {
@@ -47,6 +52,7 @@ struct QueryService {
         return try Archive(paths: paths, readOnly: true)
     }
     func call(_ name: String, arguments args: [String: Any]) throws -> [String: Any] {
+        if let legacy = MCPServer.genericToolAliases[name] { return try call(legacy, arguments: args) }
         if ReminderMCP.tools.contains(where: { $0["name"] as? String == name }) {
             return try ReminderMCP.call(name, arguments: args, service: self)
         }
@@ -55,21 +61,22 @@ struct QueryService {
             try validate(args, allowed: [])
             return try status()
         case "wechat_list_conversations":
-            try validate(args, allowed: ["query", "limit", "offset", "include_total"])
+            try validate(args, allowed: ["query", "limit", "offset", "include_total", "source"])
+            let platform = try source(args)
             let query = try text(args, "query") ?? ""
             let offset = try integer(args, "offset", default: 0, range: 0...1_000_000)
             let limit = try integer(args, "limit", default: 50, range: 1...200)
             let includeTotal = try boolean(args, "include_total", default: true)
             let store = try archive()
             return try store.database.readSnapshot {
-                let rows = try store.conversations(query: query, limit: limit + 1, offset: offset)
+                let rows = try store.conversations(query: query, limit: limit + 1, offset: offset, platform: platform)
                 let page = Array(rows.prefix(limit))
-                let total = includeTotal ? try store.conversationCount(query: query) : nil
+                let total = includeTotal ? try store.conversationCount(query: query, platform: platform) : nil
                 var result = pagination(
                     total: total, offset: offset, limit: limit, returned: page.count, hasMore: rows.count > limit)
                 result["conversations"] = page.map {
                     [
-                        "id": $0.id, "name": $0.name, "kind": $0.kind,
+                        "id": $0.id, "name": $0.name, "kind": $0.kind, "source": $0.platform.rawValue,
                         "identity_source": $0.identitySource, "message_count": $0.count, "last_at": $0.lastAt,
                         "display_kind": $0.kindLabel, "group_inferred": $0.inferredGroup,
                     ] as [String: Any]
@@ -83,12 +90,13 @@ struct QueryService {
                 args,
                 allowed: [
                     "query", "conversation_id", "from", "to", "limit", "offset", "detail", "body_limit",
-                    "include_total",
+                    "include_total", "source",
                 ])
             let query = try text(args, "query") ?? ""
             let from = try text(args, "from")
             let to = try text(args, "to")
             var filter = MessageFilter(query: query, conversation: try text(args, "conversation_id"))
+            filter.platform = try source(args)
             if let from { filter.from = try normalizedTime(from, end: false) }
             if let to { filter.before = try normalizedTime(to, end: true) }
             if let from = filter.from, let before = filter.before, from >= before {
@@ -188,6 +196,7 @@ struct QueryService {
             let presentation = message.presentation
             return [
                 "id": message.id, "conversation_id": message.conversationID,
+                "platform": message.notificationPlatform?.rawValue ?? "unknown",
                 "conversation_name": message.conversationName,
                 "conversation_kind": message.conversationKind, "timestamp": message.deliveredAt ?? message.capturedAt,
                 "body": String(message.body[..<end]), "body_truncated": end != message.body.endIndex,
@@ -209,6 +218,13 @@ struct QueryService {
             "total": total as Any? ?? NSNull(), "offset": offset, "limit": limit, "returned": returned,
             "has_more": hasMore, "next_offset": hasMore ? (offset + returned) as Any : NSNull(),
         ]
+    }
+    private func source(_ args: [String: Any]) throws -> NotificationPlatform? {
+        guard let name = try text(args, "source") else { return nil }
+        guard let platform = NotificationPlatform(rawValue: name) else {
+            throw MCPQueryError.invalidArguments("source 必须是 wechat 或 feishu；省略表示全部来源。")
+        }
+        return platform
     }
     func validate(_ args: [String: Any], allowed: Set<String>) throws {
         let unknown = Set(args.keys).subtracting(allowed)

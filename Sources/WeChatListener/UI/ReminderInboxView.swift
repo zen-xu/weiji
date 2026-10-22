@@ -40,6 +40,9 @@ struct ReminderInboxView: View {
                 List(entries) { entry in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
+                            if entry.hit.message.source != "agent_reminder" {
+                                Text(entry.hit.message.platformName).font(.caption).foregroundStyle(.secondary)
+                            }
                             Text(entry.hit.message.displayName).font(.headline).lineLimit(1)
                             Spacer()
                             Text(entry.receivedAt.formatted(date: .abbreviated, time: .shortened))

@@ -62,6 +62,7 @@ final class ReminderMatcher {
             var names: [String] = []
             var ids: [UUID] = []
             for entry in compiled where !suspended.contains(entry.rule.id) {
+                guard let source = message.notificationPlatform, entry.rule.sources.contains(source) else { continue }
                 let key = "\(entry.rule.id)|\(message.id)"
                 guard !deduplicate || !seen.contains(key) else { continue }
                 do {
