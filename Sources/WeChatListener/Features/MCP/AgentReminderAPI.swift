@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Durable local outbox. Retains completed request IDs for 30 days to make retries safe.
@@ -14,9 +15,29 @@ struct AgentReminderAPI {
     var tokenURL: URL { paths.root.appendingPathComponent("agent-api-token") }
     private var queueURL: URL { paths.root.appendingPathComponent("agent-reminders.json") }
 
+    private func acquireFileLock() throws -> Int32 {
+        try FileManager.default.createDirectory(
+            at: paths.root, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let descriptor = open(
+            paths.root.appendingPathComponent("agent-reminders.lock").path,
+            O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { throw ListenerError("无法锁定 Agent 提醒队列。") }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            close(descriptor)
+            throw ListenerError("Agent 提醒队列正忙，请稍后使用相同 request_id 重试。")
+        }
+        return descriptor
+    }
+    private func releaseFileLock(_ descriptor: Int32) {
+        flock(descriptor, LOCK_UN)
+        close(descriptor)
+    }
     func token() throws -> String {
         Self.lock.lock()
         defer { Self.lock.unlock() }
+        let descriptor = try acquireFileLock()
+        defer { releaseFileLock(descriptor) }
         return try tokenUnlocked()
     }
     private func tokenUnlocked() throws -> String {
@@ -62,6 +83,8 @@ struct AgentReminderAPI {
     func delivered(_ ids: [String]) throws {
         Self.lock.lock()
         defer { Self.lock.unlock() }
+        let descriptor = try acquireFileLock()
+        defer { releaseFileLock(descriptor) }
         let completed = Set(ids)
         var items = try load()
         for index in items.indices where completed.contains(items[index].requestID) {
@@ -93,6 +116,8 @@ struct AgentReminderAPI {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         do {
+            let descriptor = try acquireFileLock()
+            defer { releaseFileLock(descriptor) }
             guard request.headers["authorization"] == "Bearer \(try tokenUnlocked())" else {
                 return .json(["error": "unauthorized"], status: 401)
             }

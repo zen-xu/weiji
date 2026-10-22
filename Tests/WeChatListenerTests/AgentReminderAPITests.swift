@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -102,4 +103,25 @@ func agentReminderMCPDiscovery() throws {
     #expect(try call(["title": "incomplete"])["isError"] as? Bool == true)
     let status = try QueryService(paths: paths).status()
     #expect((status["agent_reminders"] as? [String: Any])?["mcp_tool"] as? String == "wechat_create_reminder")
+}
+
+@Test("Agent reminder writers honor a shared file lock")
+func agentReminderProcessLock() throws {
+    let root = try TestSupport.makeDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let api = AgentReminderAPI(paths: AppPaths(override: root.path))
+    let token = try api.token()
+    let descriptor = open(root.appendingPathComponent("agent-reminders.lock").path, O_RDWR)
+    try #require(descriptor >= 0)
+    defer { close(descriptor) }
+    try #require(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+    let request = MCPHTTPRequest(
+        method: "POST", path: "/api/reminders",
+        headers: ["authorization": "Bearer \(token)", "content-type": "application/json"],
+        body: Data(#"{"request_id":"lock-test","title":"x","body":"x"}"#.utf8))
+    #expect(api.response(to: request).status == 503)
+    #expect(try api.pending().isEmpty)
+    flock(descriptor, LOCK_UN)
+    #expect(api.response(to: request).status == 202)
+    #expect(try api.pending().count == 1)
 }
