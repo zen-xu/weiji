@@ -19,7 +19,7 @@ enum DemoData {
                     chat: fixture.0, identity: "fixture-demo-\(index)", delivered: date, captured: date))
         }
         let feishu = [
-            ("产品讨论 · 示例", "飞书通知示例：今晚 20:00 发布，请在下班前确认配置。"),
+            ("产品讨论 · 示例", "今晚 20:00 发布，变更窗口约 30 分钟。\n\n请各负责人在 18:00 前确认配置与回滚方案。\n值班同学在发布后观察 15 分钟。"),
             ("值班安排 · 示例", "飞书通知示例：下周值班表已更新，请确认你的排班。"),
         ]
         for (index, fixture) in feishu.enumerated() {

@@ -72,6 +72,7 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
     private var inWindowsMenu = false
     var snoozedUntil: Date? { inbox.snoozedUntil }
     var openMessage: ((Message) -> Void)?
+    var openInbox: (() -> Void)?
     var onCountChange: ((Int) -> Void)?
 
     func present(_ hits: [ReminderHit], sound: Bool, showWindow: Bool = true) {
@@ -109,7 +110,8 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
                 hide: { [weak self] in self?.hide() },
                 snooze: { [weak self] in self?.snooze(minutes: $0) },
                 expand: { [weak self] in self?.toggleExpanded() },
-                openMessage: { [weak self] in self?.openMessage?($0) })
+                openMessage: { [weak self] in self?.openMessage?($0) },
+                readFull: { [weak self] in self?.openInbox?() })
             let controller = NSHostingController(rootView: view)
             controller.sizingOptions = []
             (controller.view as? NSHostingView<ReminderPromptView>)?.sizingOptions = []
@@ -183,6 +185,7 @@ struct ReminderPromptView: View {
     var snooze: (Int) -> Void
     var expand: () -> Void
     var openMessage: (Message) -> Void
+    var readFull: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -226,7 +229,7 @@ struct ReminderPromptView: View {
                     Button("1 小时后提醒") { snooze(60) }
                 }.menuStyle(.borderlessButton).fixedSize()
                 Spacer()
-                Button("处理当前提醒", action: confirm)
+                Button("全部查收", action: confirm)
                     .buttonStyle(.plain).foregroundStyle(AppAppearance.accent)
             }.font(.callout).padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 10)
         }.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -240,20 +243,48 @@ struct ReminderPromptView: View {
 
     private func message(_ hit: ReminderHit, compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if hit.message.source != "agent_reminder" {
-                    Text(hit.message.platformName).font(.caption).foregroundStyle(.secondary)
-                }
-                Text(
-                    [hit.message.senderDisplayName, hit.message.displayName].compactMap { $0 }.joined(separator: " · ")
-                )
-                .font(.subheadline.bold()).lineLimit(compact ? 1 : nil)
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(hit.message.displayName).font(.system(size: 13, weight: .semibold))
+                    .lineLimit(compact ? 1 : nil)
+                if compact { NotificationSourceBadge(message: hit.message) }
                 if hit.isPreview { Text("预览").font(.caption).foregroundStyle(.secondary) }
+                Spacer(minLength: 8)
+                if !hit.isPreview {
+                    Toggle(
+                        "已查收",
+                        isOn: Binding(
+                            get: { inbox.entries.first(where: { $0.id == hit.id })?.isHandled ?? false },
+                            set: { received in if received { inbox.handle(hit.id) } })
+                    )
+                    .toggleStyle(.checkbox).controlSize(.small).font(.caption).fixedSize()
+                    .help("查收这一条提醒，不再显示；可在收件箱的已处理列表找回。")
+                    .accessibilityLabel("已查收：" + hit.message.displayName)
+                }
             }
-            Text(hit.message.body).font(.body).lineLimit(compact ? 3 : nil)
-                .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            if !compact {
+                HStack(spacing: 7) {
+                    NotificationSourceBadge(message: hit.message)
+                    if let sender = hit.message.presentation.sender, sender != hit.message.displayName {
+                        Text(sender).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            NotificationBody(
+                text: hit.message.body, summary: hit.message.source == "agent_reminder", lineLimit: compact ? 3 : nil)
+            if !compact && LongNotificationBody.needsReader(hit.message.body) {
+                Button("在收件箱阅读全文", action: readFull)
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(AppAppearance.accent)
+            }
             HStack {
-                Text(hit.ruleNames.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if compact && LongNotificationBody.needsReader(hit.message.body) {
+                    Button("阅读全文", action: readFull).buttonStyle(.plain).font(.caption).foregroundStyle(
+                        AppAppearance.accent)
+                } else if hit.message.source == "agent_reminder" {
+                    Text(hit.message.date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(
+                        .secondary)
+                } else {
+                    Text(hit.ruleNames.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer()
                 if !hit.isPreview && hit.message.source != "agent_reminder" {
                     Button("查看会话") { openMessage(hit.message) }.buttonStyle(.plain).font(.caption)

@@ -33,49 +33,14 @@ struct ReminderInboxView: View {
                 ContentUnavailableView(
                     filter == .handled ? "还没有已处理的提醒" : filter == .snoozed ? "没有稍后提醒" : "没有待处理的提醒",
                     systemImage: filter == .handled ? "checkmark.circle" : "bell",
-                    description: Text(filter == .unread ? "命中规则的重要消息会保留在这里，退出后也不会丢失。" : "提醒的处理状态会保存在本机。")
+                    description: Text(filter == .unread ? "规则命中和 Agent 提醒会保留在这里，退出后也不会丢失。" : "提醒的处理状态会保存在本机。")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(entries) { entry in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline) {
-                            if entry.hit.message.source != "agent_reminder" {
-                                Text(entry.hit.message.platformName).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Text(entry.hit.message.displayName).font(.headline).lineLimit(1)
-                            Spacer()
-                            Text(entry.receivedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Text(entry.hit.message.body).lineLimit(5).textSelection(.enabled)
-                        HStack {
-                            Text(entry.hit.ruleNames.joined(separator: "、")).font(.caption).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Spacer()
-                            if entry.hit.message.source != "agent_reminder" {
-                                Button("查看会话") { model.openReminderMessage(entry.hit.message) }.buttonStyle(.borderless)
-                            }
-                            if entry.isHandled {
-                                Button("恢复未处理") { inbox.restore(entry.id) }.buttonStyle(.borderless)
-                            } else {
-                                Menu("稍后") {
-                                    ForEach([5, 15, 60], id: \.self) { minutes in
-                                        Button("\(minutes) 分钟后") {
-                                            inbox.snooze(
-                                                entry.id, until: Date().addingTimeInterval(Double(minutes * 60)))
-                                        }
-                                    }
-                                }.menuStyle(.borderlessButton).fixedSize()
-                                Button("处理完成") { inbox.handle(entry.id) }.buttonStyle(.borderless)
-                            }
-                        }
-                        let due = max(entry.dueAt, entry.snoozedUntil ?? .distantPast)
-                        if !entry.isHandled && due > Date() {
-                            Label("将在 \(due.formatted(date: .abbreviated, time: .shortened)) 提醒", systemImage: "clock")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }.padding(.vertical, 10)
+                    ReminderInboxRow(entry: entry, inbox: inbox, model: model)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 }.listStyle(.inset)
             }
             if let issue = inbox.issue {
@@ -86,6 +51,65 @@ struct ReminderInboxView: View {
                     .font(.caption).foregroundStyle(.secondary).padding(12)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct ReminderInboxRow: View {
+    let entry: ReminderEntry
+    @ObservedObject var inbox: ReminderInbox
+    @ObservedObject var model: AppModel
+    private var message: Message { entry.hit.message }
+    private var due: Date { max(entry.dueAt, entry.snoozedUntil ?? .distantPast) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            LongNotificationBody(message: message, text: message.body, previewLines: 7)
+            footer
+            if !entry.isHandled && due > Date() {
+                Label("将在 \(due.formatted(date: .abbreviated, time: .shortened)) 提醒", systemImage: "clock")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12).strokeBorder(
+                Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
+        }
+    }
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(message.displayName).font(.system(size: 14, weight: .semibold)).textSelection(.enabled)
+                NotificationSourceBadge(message: message)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Text(entry.receivedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.system(size: 11)).foregroundStyle(.secondary).padding(.top, 2)
+        }
+    }
+    private var footer: some View {
+        HStack(spacing: 12) {
+            if message.source != "agent_reminder" {
+                Text(entry.hit.ruleNames.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Button("查看会话") { model.openReminderMessage(message) }.buttonStyle(.borderless)
+            }
+            Spacer(minLength: 8)
+            if entry.isHandled {
+                Label("已处理", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+                Button("恢复未处理") { inbox.restore(entry.id) }.buttonStyle(.borderless)
+            } else {
+                Menu("稍后") {
+                    ForEach([5, 15, 60], id: \.self) { minutes in
+                        Button("\(minutes) 分钟后") {
+                            inbox.snooze(entry.id, until: Date().addingTimeInterval(Double(minutes * 60)))
+                        }
+                    }
+                }.menuStyle(.borderlessButton).fixedSize()
+                Button("处理完成") { inbox.handle(entry.id) }.buttonStyle(.borderless)
+            }
+        }.font(.caption)
     }
 }
 
