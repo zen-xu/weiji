@@ -401,9 +401,36 @@ import UniformTypeIdentifiers
         reminderMonitor?.invalidate()
         refreshReminderRules()
         reminderMonitor = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshReminderRules() }
+            Task { @MainActor in
+                self?.refreshReminderRules()
+                self?.receiveAgentReminders()
+            }
         }
         reminderMonitor?.tolerance = 0.5
+    }
+    func receiveAgentReminders() {
+        guard !isShuttingDown else { return }
+        do {
+            let api = AgentReminderAPI(paths: paths)
+            var completed: [String] = []
+            for item in try api.pending().prefix(10) {
+                var message = NotificationDecoder.make(
+                    record: 0, title: item.title, subtitle: "", body: item.body,
+                    delivered: nil, captured: Date())
+                message.id = "agent:" + item.requestID
+                message.source = "agent_reminder"
+                message.coverage = "agent_generated"
+                message.bodyMayBeTruncated = false
+                let hit = ReminderHit(
+                    message: message, ruleNames: ["Agent 提醒"], sourceMessageIDs: item.sourceMessageIDs)
+                onReminder?([hit], preferences.reminderSound ?? false)
+                reminderInbox.flush()
+                if reminderInbox.isPersisted(hit.id) {
+                    completed.append(item.requestID)
+                }
+            }
+            if !completed.isEmpty { try api.delivered(completed) }
+        } catch { reminderIssue = "无法读取或保存 Agent 提醒，请检查数据目录。" }
     }
     func beginReminderSession(at date: Date = Date()) {
         reminderStartedAt = date

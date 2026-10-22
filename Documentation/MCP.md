@@ -67,3 +67,32 @@
 ## 提醒规则配置
 
 0.2.0 新增 `wechat_list_reminder_rules`、`wechat_test_reminder_rule`、`wechat_save_reminder_rule`、`wechat_delete_reminder_rule`。其中保存和删除只修改本机提醒规则，消息、文件及原有六个数据工具保持只读。请先读取 revision、测试正反示例，再以 expected_revision 保存；参数与示例见 [提醒规则](Reminders.md)。
+
+## Agent 主动提醒 HTTP API
+
+`POST http://127.0.0.1:18765/api/reminders`（使用设置中的实际端口）。不需要 MCP 客户端，也不经过固定规则匹配。App 必须运行且本地服务已启动；不要求开启通知采集。Agent 自行负责定时查询、理解需求和决定是否提醒。
+
+在本地服务页面点击“复制提醒接口令牌”，使用 `Authorization: Bearer <令牌>`。令牌保存在数据目录的 `agent-api-token`，权限为 0600；不要将其提交到代码仓库。服务仅监听回环地址，拒绝携带 Origin 的浏览器请求并校验 Host，不提供 CORS。
+
+```sh
+# WEIJI_TOKEN 使用从 App 复制的令牌；不要把真实令牌写入共享脚本。
+curl --fail-with-body http://127.0.0.1:18765/api/reminders \
+  -H "Authorization: Bearer $WEIJI_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"request_id":"project-deploy-20261022","title":"上线安排需要确认","body":"请在今晚 20:00 前确认配置。","source_message_ids":[]}'
+```
+
+- 必填：`request_id`（1–128 字节，ASCII 字母、数字及 `-._:`）、`title`（1–200 字符）、`body`（1–4000 字符）。整个 JSON 最多 24000 字节。不接受未知字段。
+- 可选：`source_message_ids`（最多 20 个，每个 1–128 字符）。作为 agent 提供的来源引用保存，不代表 App 已验证引用与生成内容的关系；生成内容不会写入聊天档案。
+- 新请求返回 202：`{"request_id":"...","status":"accepted","duplicate":false}`。表示已保存到本机待投递队列，App 通常约 2 秒内导入提醒收件箱；不保证此刻已显示。提醒沿用声音偏好和稍后提醒行为，不抢占焦点。
+- 相同 ID 和内容返回 200，`duplicate:true`；相同 ID 内容不同返回 409。已投递请求保留 30 天用于去重，队列最多 1000 条（含保留记录），满时返回 503，未投递请求不会自动过期。超过保留期或用户清空收件箱后，不应依赖永久去重。
+- 401 表示令牌错误，400 表示参数错误，415 表示非 JSON，503 表示存储不可用或队列满。仅对临时错误重试，并保持原 request_id。
+- 首版仅支持立即提交提醒，不支持 `notify_at`；需要定时提醒时由 agent 在目标时间调用。提醒显示“Agent 提醒”，与原微信通知区分。
+
+### 让 Agent 自动发现微迹提醒能力
+
+侧栏入口为 **API 与 Agent**，其中“Agent 主动提醒”提供 HTTP 地址与令牌复制按钮。
+
+MCP 另提供 `wechat_create_reminder`，参数与 HTTP JSON 相同，但不需要另传 HTTP 令牌。它使用现有本机 MCP 连接的信任边界，与其他本机写入工具一样，应仅在用户授权的提醒/关注任务内调用。`initialize.instructions`、工具描述以及 `wechat_status.agent_reminders` 都明确指出：需要微迹发送提醒时调用此工具，聊天回复或 agent 自身通知不能代替微迹投递。成功返回 `delivery_provider=weiji`、`delivery_state=queued`，不声称卡片已显示。
+
+可以向 agent 交办：“定时查阅项目群，有涉及我的上线安排时，调用微迹的 wechat_create_reminder 提醒我。”定时执行仍依赖 agent 的调度能力；MCP 本身不会启动后台 agent。已连接的客户端可能缓存工具列表与初始化说明，更新 App 后需要刷新或重新连接 MCP 才能发现新增工具。

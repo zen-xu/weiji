@@ -79,7 +79,8 @@ struct MCPHTTPResponse {
     var data: Data {
         let reason =
             [
-                200: "OK", 202: "Accepted", 400: "Bad Request", 403: "Forbidden", 404: "Not Found",
+                200: "OK", 401: "Unauthorized", 409: "Conflict", 202: "Accepted", 400: "Bad Request", 403: "Forbidden",
+                404: "Not Found",
                 405: "Method Not Allowed", 406: "Not Acceptable", 408: "Request Timeout", 411: "Length Required",
                 413: "Content Too Large", 415: "Unsupported Media Type", 431: "Request Header Fields Too Large",
                 503: "Service Unavailable",
@@ -102,6 +103,9 @@ struct MCPHTTPHandler {
             let host = request.headers["host"],
             ["127.0.0.1:\(port)", "localhost:\(port)"].contains(host.lowercased())
         else { return MCPHTTPResponse(status: 403) }
+        if request.path == "/api/reminders" {
+            return AgentReminderAPI(paths: paths).response(to: request)
+        }
         guard request.path == "/mcp" else { return MCPHTTPResponse(status: 404) }
         guard request.method == "POST" else {
             return MCPHTTPResponse(status: 405, headers: ["Allow": "POST"])

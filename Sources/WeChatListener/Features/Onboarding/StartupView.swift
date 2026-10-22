@@ -4,6 +4,7 @@ import SwiftUI
 struct StartupView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var startup: StartupCoordinator
+    @State private var showAgentAPI = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -19,6 +20,7 @@ struct StartupView: View {
                 Divider()
                 HStack {
                     Button("退出") { NSApp.terminate(nil) }
+                    Button("API 与 Agent") { showAgentAPI = true }
                     Spacer()
                     Button("重新检查", action: startup.recheck)
                     if access == .denied {
@@ -38,6 +40,16 @@ struct StartupView: View {
             case .ready: EmptyView()
             }
         }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity).background(.background)
+            .sheet(isPresented: $showAgentAPI) {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("API 与 Agent").font(.headline)
+                        Spacer()
+                        Button("完成") { showAgentAPI = false }
+                    }.padding()
+                    MCPConnectionView(model: model)
+                }.frame(width: 680, height: 660)
+            }
     }
 
     private func accessContent(_ access: NotificationAccess) -> some View {

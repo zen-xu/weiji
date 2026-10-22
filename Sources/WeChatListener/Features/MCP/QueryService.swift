@@ -8,6 +8,11 @@ struct QueryService {
             "read_only": true, "data_directory": paths.root.path,
             "timezone": TimeZone.current.identifier, "current_time": Dates.string(Date()),
             "reminder_configuration_writable": true,
+            "agent_reminders": [
+                "provider": "微迹", "mcp_tool": "wechat_create_reminder",
+                "http_path": "/api/reminders", "http_auth": "Bearer token from App",
+                "guidance": "需要由微迹提醒时调用 wechat_create_reminder；不要以 agent 回复或自身通知代替。成功表示已入队，不代表已展示。定时查询由 agent 调度器负责。",
+            ],
         ]
         if FileManager.default.fileExists(atPath: paths.database.path) {
             let store = try archive()

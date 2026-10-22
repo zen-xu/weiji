@@ -294,6 +294,11 @@ final class ReminderInbox: ObservableObject {
         }
     }
     func flush() { persistence?.flush() }
+    func isPersisted(_ id: String) -> Bool {
+        guard let persistence else { return false }
+        persistence.flush()
+        return (try? persistence.load().entries.contains { $0.id == id }) == true
+    }
     private func persist() {
         generation += 1
         let token = generation
