@@ -29,6 +29,7 @@ final class NotificationCaptureCache {
         let date = row.double("delivered_date").map { String($0.bitPattern) } ?? "nil"
         var hash = SHA256()
         hash.update(data: Data("v1|\(id)|\(date)|\(row.data("uuid") != nil)|\(uuid.count)|\(bytes.count)|".utf8))
+        hash.update(data: Data((row.string("app_bundle_id") ?? NotificationPlatform.wechat.bundleID).lowercased().utf8))
         hash.update(data: uuid)
         hash.update(data: bytes)
         return (id, Data(hash.finalize()))

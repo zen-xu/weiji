@@ -20,6 +20,11 @@ enum ReminderMCP {
         "properties": [
             "id": ["type": "string", "format": "uuid", "description": "保存时必填；新增由客户端生成 UUID，修改沿用原 ID。"],
             "name": ["type": "string", "minLength": 1, "maxLength": 80],
+            "sources": [
+                "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true,
+                "items": ["type": "string", "enum": NotificationPlatform.allCases.map(\.rawValue)],
+                "description": "规则适用来源；新规则默认仅微信，修改时省略保留旧值。",
+            ],
             "enabled": ["type": "boolean", "default": true],
             "match": ["type": "string", "enum": ["all", "any"], "default": "all"],
             "ignore_case": ["type": "boolean", "default": true],
@@ -93,6 +98,10 @@ enum ReminderMCP {
                     "sample": [
                         "type": "object", "additionalProperties": false, "required": ["body"],
                         "properties": [
+                            "source": [
+                                "type": "string", "enum": NotificationPlatform.allCases.map(\.rawValue),
+                                "default": "wechat",
+                            ],
                             "conversation": ["type": "string", "maxLength": 2000],
                             "sender": ["type": "string", "maxLength": 2000],
                             "body": ["type": "string", "maxLength": 32768],
@@ -109,6 +118,7 @@ enum ReminderMCP {
         [
             "id": rule.id.uuidString, "name": rule.name, "enabled": rule.isEnabled,
             "match": rule.matchAll ? "all" : "any", "ignore_case": rule.ignoreCase,
+            "sources": rule.sources.map(\.rawValue),
             "minimum_interval_seconds": rule.minimumIntervalSeconds,
             "quiet_hours": rule.quietHours.map { ["start_minute": $0.startMinute, "end_minute": $0.endMinute] } as Any?
                 ?? NSNull(),
@@ -129,7 +139,7 @@ enum ReminderMCP {
             args,
             allowed: [
                 "id", "name", "enabled", "match", "ignore_case", "conditions", "quiet_hours",
-                "minimum_interval_seconds",
+                "minimum_interval_seconds", "sources",
             ])
         var rule = ReminderRule()
         if let id = try service.text(args, "id") {
@@ -153,6 +163,14 @@ enum ReminderMCP {
             rule.quietHours = try ReminderQuietHours(
                 startMinute: service.integer(quiet, "start_minute", default: 1320, range: 0...1439),
                 endMinute: service.integer(quiet, "end_minute", default: 480, range: 0...1439))
+        }
+        if let sources = args["sources"] {
+            guard let names = sources as? [String], !names.isEmpty, names.count <= 2,
+                names.allSatisfy({ NotificationPlatform(rawValue: $0) != nil }), Set(names).count == names.count
+            else {
+                throw MCPQueryError.invalidArguments("sources 需要非空、不重复的 wechat/feishu 数组。")
+            }
+            rule.sources = names.compactMap(NotificationPlatform.init(rawValue:))
         }
         rule.name = name
         rule.isEnabled = try service.boolean(args, "enabled", default: true)
@@ -189,12 +207,15 @@ enum ReminderMCP {
             guard let sample = args["sample"] as? [String: Any], let body = sample["body"] as? String,
                 body.utf16.count <= 32768
             else { throw MCPQueryError.invalidArguments("sample.body 必须是最多 32768 字的字符串。") }
-            try service.validate(sample, allowed: ["conversation", "sender", "body", "conversation_kind"])
+            try service.validate(sample, allowed: ["conversation", "sender", "body", "conversation_kind", "source"])
             let kind = try service.text(sample, "conversation_kind") ?? "unknown"
             guard ["group", "direct", "unknown"].contains(kind) else { throw MCPQueryError.invalidArguments("会话类型无效。") }
+            guard let source = NotificationPlatform(rawValue: try service.text(sample, "source") ?? "wechat") else {
+                throw MCPQueryError.invalidArguments("sample.source 必须是 wechat 或 feishu。")
+            }
             var message = NotificationDecoder.make(
                 record: 0, title: try service.text(sample, "conversation") ?? "", subtitle: "", body: body,
-                delivered: nil, captured: Date())
+                delivered: nil, captured: Date(), platform: source)
             message.senderDisplayName = NotificationDecoder.nonempty(try service.text(sample, "sender"))
             message.conversationKind = kind
             let result = ReminderMatcher().evaluate([message], rules: [rule], deduplicate: false)
@@ -218,6 +239,7 @@ enum ReminderMCP {
             var rule = try parse(args["rule"], service: service, requireID: true)
             if let index = rules.firstIndex(where: { $0.id == rule.id }) {
                 let supplied = args["rule"] as? [String: Any] ?? [:]
+                if supplied["sources"] == nil { rule.sources = rules[index].sources }
                 if supplied["quiet_hours"] == nil { rule.quietHours = rules[index].quietHours }
                 if supplied["minimum_interval_seconds"] == nil {
                     rule.minimumIntervalSeconds = rules[index].minimumIntervalSeconds

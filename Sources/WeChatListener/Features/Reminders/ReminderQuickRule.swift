@@ -33,6 +33,8 @@ enum ReminderQuickRule {
             conditions.append(ReminderCondition(field: .body, comparison: .regex, value: #"[@＠]\s*了?\s*所有人"#))
             name += " · @所有人"
         }
-        return ReminderRule(name: String(name.prefix(80)), ignoreCase: false, conditions: conditions)
+        return ReminderRule(
+            name: String(name.prefix(80)), ignoreCase: false, conditions: conditions,
+            sources: [message.notificationPlatform ?? .wechat])
     }
 }

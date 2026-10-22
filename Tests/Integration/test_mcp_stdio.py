@@ -64,8 +64,8 @@ with tempfile.TemporaryDirectory(prefix="wechat-mcp-fixture-") as directory:
     send({"jsonrpc": "2.0", "method": "notifications/initialized"})
     assert call(2, "ping")["result"] == {}
     tools = call(3, "tools/list")["result"]["tools"]
-    assert len(tools) == 11
-    assert {tool["name"] for tool in tools if not tool["annotations"]["readOnlyHint"]} == {"wechat_save_reminder_rule", "wechat_delete_reminder_rule", "wechat_create_reminder"}
+    assert len(tools) == 16
+    assert {tool["name"] for tool in tools if not tool["annotations"]["readOnlyHint"]} == {"wechat_save_reminder_rule", "wechat_delete_reminder_rule", "wechat_create_reminder", "create_reminder"}
     status = call(4, "tools/call", {"name": "wechat_status", "arguments": {}})["result"]
     assert status["structuredContent"]["archive_available"] is False
     assert not data_dir.exists(), "Read-only MCP status must not create the archive"

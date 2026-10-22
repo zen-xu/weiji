@@ -120,8 +120,11 @@ def package(tag):
 下载 DMG 后将应用拖入 Applications，或解压 ZIP 安装。首次打开按系统提示和应用引导授予权限。
 
 - 从 v0.4.1 起仅发布 Apple Silicon（arm64）版本；之前已发布的通用包保留原样。
-- 新增 Agent 主动提醒：HTTP POST `/api/reminders` 与 MCP `wechat_create_reminder`，由微迹展示角落卡片并保存到收件箱，无需固定匹配规则。
-- HTTP 提醒接口使用本机令牌；请求持久化、事件去重并保留来源消息引用。MCP 明确提示 agent 由微迹负责提醒，不以聊天回复代替。
+- 新增飞书系统通知文字采集；侧栏按“微信会话 / 飞书会话”分层，消息和提醒显示来源，同名会话跨来源隔离。飞书不处理附件、图片或文件索引。
+- 通用 MCP 查询 `notifications_status`、`notifications_list_conversations`、`notifications_search_messages`、`notifications_get_context` 支持微信和飞书，查询可按 source 筛选，旧 wechat_* 名称保留兼容。
+- Agent 主动提醒支持通用 MCP `create_reminder` 和 HTTP POST `/api/reminders`，由微迹展示角落卡片并保存到收件箱，无需固定匹配规则。
+- HTTP 提醒接口默认免令牌，可在“API 与 Agent”按需开启令牌验证，即时生效；仅监听本机，保留 Host / Origin 校验。请求持久化、事件去重并保留来源消息引用。
+- 提醒规则可选择微信、飞书或两个来源；已有规则默认只匹配微信，避免误触发同名飞书会话。
 - 侧栏统一为“API 与 Agent”，权限启动页也可查看接口；定时查阅与语义判断由外部 agent 调度器负责。
 - 原生通知档案、文件/图片索引、启动权限引导和微信风格绿色界面。
 - 提醒规则支持 iCloud Drive 文件夹同步：各设备选择同一文件夹，自动合并独立修改、同步删除，并保留停用的冲突副本。默认关闭，仅同步规则，不含消息和收件箱。

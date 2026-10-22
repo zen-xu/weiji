@@ -241,6 +241,9 @@ struct ReminderPromptView: View {
     private func message(_ hit: ReminderHit, compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                if hit.message.source != "agent_reminder" {
+                    Text(hit.message.platformName).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(
                     [hit.message.senderDisplayName, hit.message.displayName].compactMap { $0 }.joined(separator: " · ")
                 )

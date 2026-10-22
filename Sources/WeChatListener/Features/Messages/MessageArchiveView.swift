@@ -48,7 +48,7 @@ struct MessageArchiveView: View {
                         model.stats?.messages == 0 ? "尚无通知" : "没有匹配的通知",
                         systemImage: model.search.isEmpty ? "tray" : "magnifyingglass")
                 } description: {
-                    Text(model.stats?.messages == 0 ? "开始采集后，收到的微信通知会保存在这里。" : "试试其他关键词或时间范围。")
+                    Text(model.stats?.messages == 0 ? "开始采集后，收到的微信和飞书通知会保存在这里。" : "试试其他关键词或时间范围。")
                 } actions: {
                     if !model.search.isEmpty || model.dateScope != .all {
                         Button("清除筛选") {

@@ -45,7 +45,7 @@ for http_mode in (False, True):
                                        'clientInfo': {'name': 'synthetic-query-workflow', 'version': '1'}})
             assert 'detail=compact' in hello['instructions']
             tools = {entry['name']: entry for entry in rpc('tools/list')['tools']}
-            assert len(tools) == 11
+            assert len(tools) == 16
             assert tools['wechat_search_messages']['inputSchema']['properties']['detail']['default'] == 'full'
             assert tool('wechat_search_messages')['structuredContent']['error']['code'] == 'archive_not_available'
             assert not archive.exists()

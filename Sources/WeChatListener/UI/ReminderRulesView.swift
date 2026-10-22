@@ -156,6 +156,16 @@ struct ReminderRuleEditor: View {
             Form {
                 Section {
                     TextField("规则名称", text: $rule.name, prompt: Text("例如：项目群的重要消息"))
+                    ForEach(NotificationPlatform.allCases) { platform in
+                        Toggle(
+                            platform.name + "通知",
+                            isOn: Binding(
+                                get: { rule.sources.contains(platform) },
+                                set: { enabled in
+                                    rule.sources.removeAll { $0 == platform }
+                                    if enabled { rule.sources.append(platform) }
+                                }))
+                    }
                     Picker("触发方式", selection: $rule.matchAll) {
                         Text("满足以下全部条件（且）").tag(true)
                         Text("满足以下任一条件（或）").tag(false)

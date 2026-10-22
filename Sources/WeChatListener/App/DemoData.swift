@@ -18,6 +18,17 @@ enum DemoData {
                     record: Int64(index + 1), title: fixture.1, subtitle: fixture.2, body: fixture.3,
                     chat: fixture.0, identity: "fixture-demo-\(index)", delivered: date, captured: date))
         }
+        let feishu = [
+            ("产品讨论 · 示例", "飞书通知示例：今晚 20:00 发布，请在下班前确认配置。"),
+            ("值班安排 · 示例", "飞书通知示例：下周值班表已更新，请确认你的排班。"),
+        ]
+        for (index, fixture) in feishu.enumerated() {
+            let date = Date().addingTimeInterval(Double(-index * 600 - 60))
+            try archive.ingest(
+                NotificationDecoder.make(
+                    record: Int64(index + 100), title: fixture.0, subtitle: "", body: fixture.1,
+                    identity: "fixture-feishu-\(index)", delivered: date, captured: date, platform: .feishu))
+        }
         try archive.flushJournal()
     }
 

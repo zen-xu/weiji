@@ -20,10 +20,14 @@ final class NotificationSource {
             while true {
                 let page = try database.rows(
                     """
-                    SELECT r.rec_id, r.uuid, r.delivered_date, r.data
+                    SELECT r.rec_id, r.uuid, r.delivered_date, r.data, a.identifier AS app_bundle_id
                     FROM record r JOIN app a ON a.app_id=r.app_id
-                    WHERE a.identifier = ? COLLATE NOCASE ORDER BY r.rec_id LIMIT 500 OFFSET ?
-                    """, [.text("com.tencent.xinwechat"), .integer(Int64(offset))])
+                    WHERE lower(a.identifier) IN (?,?) ORDER BY r.rec_id LIMIT 500 OFFSET ?
+                    """,
+                    [
+                        .text(NotificationPlatform.wechat.bundleID), .text(NotificationPlatform.feishu.bundleID),
+                        .integer(Int64(offset)),
+                    ])
                 rows.append(contentsOf: page)
                 if page.count < 500 { break }
                 offset += page.count

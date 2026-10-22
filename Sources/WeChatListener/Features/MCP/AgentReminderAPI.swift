@@ -33,6 +33,12 @@ struct AgentReminderAPI {
         flock(descriptor, LOCK_UN)
         close(descriptor)
     }
+    func requiresToken() throws -> Bool {
+        guard FileManager.default.fileExists(atPath: paths.preferences.path) else { return false }
+        // An unreadable/corrupt configuration must not silently turn off authentication.
+        return try JSONDecoder().decode(Preferences.self, from: Data(contentsOf: paths.preferences))
+            .agentReminderRequiresToken ?? false
+    }
     func token() throws -> String {
         Self.lock.lock()
         defer { Self.lock.unlock() }
@@ -94,9 +100,11 @@ struct AgentReminderAPI {
     }
     /// MCP callers already use the local MCP trust boundary; never return the HTTP credential.
     func create(arguments: [String: Any]) throws -> [String: Any] {
+        var headers = ["content-type": "application/json"]
+        if try requiresToken() { headers["authorization"] = "Bearer \(try token())" }
         let request = MCPHTTPRequest(
             method: "POST", path: "/api/reminders",
-            headers: ["authorization": "Bearer \(try token())", "content-type": "application/json"],
+            headers: headers,
             body: try JSONSerialization.data(withJSONObject: arguments))
         let reply = response(to: request)
         let value = try JSONSerialization.jsonObject(with: reply.body) as? [String: Any] ?? [:]
@@ -118,7 +126,7 @@ struct AgentReminderAPI {
         do {
             let descriptor = try acquireFileLock()
             defer { releaseFileLock(descriptor) }
-            guard request.headers["authorization"] == "Bearer \(try tokenUnlocked())" else {
+            if try requiresToken(), request.headers["authorization"] != "Bearer \(try tokenUnlocked())" {
                 return .json(["error": "unauthorized"], status: 401)
             }
             guard

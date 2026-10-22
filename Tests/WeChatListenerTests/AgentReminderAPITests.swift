@@ -11,6 +11,9 @@ func agentReminderAPI() throws {
     let paths = AppPaths(override: root.path)
     let api = AgentReminderAPI(paths: paths)
     let token = try api.token()
+    var preferences = Preferences()
+    preferences.agentReminderRequiresToken = true
+    try preferences.save(paths)
     let handler = MCPHTTPHandler(paths: paths, port: 18765)
     func request(_ payload: String, auth: String? = nil, origin: String? = nil) -> MCPHTTPResponse {
         var headers = ["host": "127.0.0.1:18765", "content-type": "application/json"]
@@ -102,7 +105,7 @@ func agentReminderMCPDiscovery() throws {
     #expect((try call(args)["structuredContent"] as? [String: Any])?["duplicate"] as? Bool == true)
     #expect(try call(["title": "incomplete"])["isError"] as? Bool == true)
     let status = try QueryService(paths: paths).status()
-    #expect((status["agent_reminders"] as? [String: Any])?["mcp_tool"] as? String == "wechat_create_reminder")
+    #expect((status["agent_reminders"] as? [String: Any])?["mcp_tool"] as? String == "create_reminder")
 }
 
 @Test("Agent reminder writers honor a shared file lock")
@@ -124,4 +127,41 @@ func agentReminderProcessLock() throws {
     flock(descriptor, LOCK_UN)
     #expect(api.response(to: request).status == 202)
     #expect(try api.pending().count == 1)
+}
+
+@Test("HTTP reminder token validation defaults off and changes immediately; corrupt settings fail closed")
+func agentReminderOptionalToken() throws {
+    let root = try TestSupport.makeDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = AppPaths(override: root.path)
+    let api = AgentReminderAPI(paths: paths)
+    func request(_ auth: String? = nil) -> MCPHTTPResponse {
+        var headers = ["content-type": "application/json"]
+        headers["authorization"] = auth
+        return api.response(
+            to: MCPHTTPRequest(
+                method: "POST", path: "/api/reminders", headers: headers,
+                body: Data(#"{"request_id":"optional-auth","title":"x","body":"x"}"#.utf8)))
+    }
+    #expect(try !api.requiresToken())
+    #expect(request().status == 202)
+    #expect(!FileManager.default.fileExists(atPath: api.tokenURL.path))
+    var preferences = Preferences()
+    preferences.agentReminderRequiresToken = true
+    try preferences.save(paths)
+    #expect(request().status == 401)
+    #expect(request("Bearer wrong").status == 401)
+    let token = try api.token()
+    #expect(request("Bearer \(token)").status == 200)
+    #expect(
+        (try QueryService(paths: paths).status()["agent_reminders"] as? [String: Any])?["http_auth"] as? String
+            == "Bearer token from App")
+    preferences.agentReminderRequiresToken = false
+    try preferences.save(paths)
+    #expect(request().status == 200)
+    #expect(
+        (try QueryService(paths: paths).status()["agent_reminders"] as? [String: Any])?["http_auth"] as? String
+            == "none (loopback only)")
+    try Data("{".utf8).write(to: paths.preferences)
+    #expect(request().status == 503)
 }

@@ -72,12 +72,11 @@
 
 `POST http://127.0.0.1:18765/api/reminders`（使用设置中的实际端口）。不需要 MCP 客户端，也不经过固定规则匹配。App 必须运行且本地服务已启动；不要求开启通知采集。Agent 自行负责定时查询、理解需求和决定是否提醒。
 
-在本地服务页面点击“复制提醒接口令牌”，使用 `Authorization: Bearer <令牌>`。令牌保存在数据目录的 `agent-api-token`，权限为 0600；不要将其提交到代码仓库。服务仅监听回环地址，拒绝携带 Origin 的浏览器请求并校验 Host，不提供 CORS。
+从 v0.6.0 起默认关闭令牌验证，同机程序可直接 POST。需要验证时，在“API 与 Agent”开启“提醒接口令牌验证”，再点击“复制提醒接口令牌”，使用 `Authorization: Bearer <令牌>`。令牌保存在数据目录的 `agent-api-token`，权限为 0600；不要将其提交到代码仓库。服务仅监听回环地址，拒绝携带 Origin 的浏览器请求并校验 Host，不提供 CORS。
 
 ```sh
-# WEIJI_TOKEN 使用从 App 复制的令牌；不要把真实令牌写入共享脚本。
+# 默认令牌验证关闭；开启后额外添加 Authorization: Bearer 请求头。
 curl --fail-with-body http://127.0.0.1:18765/api/reminders \
-  -H "Authorization: Bearer $WEIJI_TOKEN" \
   -H 'Content-Type: application/json' \
   --data '{"request_id":"project-deploy-20261022","title":"上线安排需要确认","body":"请在今晚 20:00 前确认配置。","source_message_ids":[]}'
 ```
@@ -93,6 +92,24 @@ curl --fail-with-body http://127.0.0.1:18765/api/reminders \
 
 侧栏入口为 **API 与 Agent**，其中“Agent 主动提醒”提供 HTTP 地址与令牌复制按钮。
 
-MCP 另提供 `wechat_create_reminder`，参数与 HTTP JSON 相同，但不需要另传 HTTP 令牌。它使用现有本机 MCP 连接的信任边界，与其他本机写入工具一样，应仅在用户授权的提醒/关注任务内调用。`initialize.instructions`、工具描述以及 `wechat_status.agent_reminders` 都明确指出：需要微迹发送提醒时调用此工具，聊天回复或 agent 自身通知不能代替微迹投递。成功返回 `delivery_provider=weiji`、`delivery_state=queued`，不声称卡片已显示。
+MCP 另提供 `create_reminder`（兼容旧名 `wechat_create_reminder`），参数与 HTTP JSON 相同，但不需要另传 HTTP 令牌。令牌开关仅作用于直接 HTTP 提醒请求，MCP 工具调用方式不变。它使用现有本机 MCP 连接的信任边界，与其他本机写入工具一样，应仅在用户授权的提醒/关注任务内调用。`initialize.instructions`、工具描述以及 `notifications_status.agent_reminders` 都明确指出：需要微迹发送提醒时调用此工具，聊天回复或 agent 自身通知不能代替微迹投递。成功返回 `delivery_provider=weiji`、`delivery_state=queued`，不声称卡片已显示。
 
-可以向 agent 交办：“定时查阅项目群，有涉及我的上线安排时，调用微迹的 wechat_create_reminder 提醒我。”定时执行仍依赖 agent 的调度能力；MCP 本身不会启动后台 agent。已连接的客户端可能缓存工具列表与初始化说明，更新 App 后需要刷新或重新连接 MCP 才能发现新增工具。
+可以向 agent 交办：“定时查阅项目群，有涉及我的上线安排时，调用微迹的 create_reminder 提醒我。”定时执行仍依赖 agent 的调度能力；MCP 本身不会启动后台 agent。已连接的客户端可能缓存工具列表与初始化说明，更新 App 后需要刷新或重新连接 MCP 才能发现新增工具。
+
+## 微信与飞书通知（v0.6.0）
+
+支持本机微信（`com.tencent.xinwechat`）和飞书（`com.electron.lark`）系统通知。飞书仅保存通知原始标题、副标题、正文和时间，不处理附件、图片或文件索引，也不套用微信的正文发送者推断。没有稳定会话标识时，按同一来源的通知标题分组；同一来源内同名联系人仍可能无法区分。跨来源的同名会话始终使用不同 ID。
+
+推荐新客户端使用来源无关的工具：
+
+- `notifications_status`：状态与 `supported_sources`。
+- `notifications_list_conversations`：可传 `source: "wechat"` 或 `source: "feishu"`，返回会话 `source`。
+- `notifications_search_messages`：同样支持 `source`；省略表示全部来源。精简和完整结果均返回 `platform`。
+- `notifications_get_context`：按消息 ID 返回同来源、同会话的上下文。
+- `create_reminder`：由微迹展示提醒，HTTP `/api/reminders` 不变。
+
+旧 `wechat_*` 查询及提醒名称保留兼容，查询也可返回两种来源；需要限定微信时明确传 `source: "wechat"`。微信专用文件、图片工具仍仅适用于微信。原有消息 ID 已按来源命名空间隔离，`source_message_ids` 可引用任意受支持来源的真实消息 ID，不用会话名称代替。
+
+侧栏分别列出“微信会话”和“飞书会话”，通知行显示来源标记。已有微信档案不重新生成 ID。旧提醒规则默认只匹配微信；规则编辑器和 MCP `rule.sources` 可选择 `["wechat"]`、`["feishu"]` 或两者。更新已有规则时省略 sources 保留原值；测试样例用 `sample.source` 指定来源，默认微信。旧版设备应升级后再共同同步含飞书来源的规则。
+
+飞书前台聊天、免打扰、隐藏预览、休眠或系统通知被清除都可能导致档案缺失；`full` 不能恢复系统未保留的文字。采集不读取飞书数据库，也不向飞书发送消息。

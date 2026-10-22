@@ -286,7 +286,7 @@ import UniformTypeIdentifiers
     func poll(oneShot: Bool = false) {
         guard !isShuttingDown, allowNotificationCapture, isCollecting || oneShot, !pollBusy else { return }
         pollBusy = true
-        if oneShot && !isCollecting { statusText = "正在补扫系统保留的微信通知…" }
+        if oneShot && !isCollecting { statusText = "正在补扫系统保留的通知…" }
         let source = paths.source
         let work = captureWork
         let reminderSince = isCollecting && !oneShot ? reminderStartedAt : nil
@@ -305,7 +305,7 @@ import UniformTypeIdentifiers
                 self.capturedThisRun += value.inserted
                 self.updatedThisRun += value.updated
                 self.parseErrors = value.failed
-                self.statusText = self.isCollecting ? "正在采集微信通知" : "已暂停采集"
+                self.statusText = self.isCollecting ? "正在采集微信和飞书通知" : "已暂停采集"
                 if value.journalError {
                     self.errorText = "消息已保存在数据库，但结构化事件日志暂未同步。请检查剩余磁盘空间。"
                 } else if value.failed > 0 {
@@ -356,6 +356,12 @@ import UniformTypeIdentifiers
         update(&updated)
         try updated.save(paths)
         preferences = updated
+    }
+    func setAgentReminderRequiresToken(_ enabled: Bool) {
+        do {
+            if enabled { _ = try AgentReminderAPI(paths: paths).token() }
+            try updatePreferences { $0.agentReminderRequiresToken = enabled }
+        } catch { errorText = "无法更新提醒接口令牌验证设置。" }
     }
     func setCollectOnLaunch(_ enabled: Bool) {
         do { try updatePreferences { $0.collectOnLaunch = enabled } } catch { errorText = error.localizedDescription }
@@ -848,7 +854,7 @@ import UniformTypeIdentifiers
         guard !isShuttingDown, !isWorking else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue =
-            "微信通知-\(Date().formatted(.iso8601.year().month().day().dateSeparator(.dash)))"
+            "通知档案-\(Date().formatted(.iso8601.year().month().day().dateSeparator(.dash)))"
             + (markdown ? ".md" : ".jsonl")
         panel.directoryURL = paths.exports
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -870,7 +876,7 @@ import UniformTypeIdentifiers
     func backup() {
         guard !isShuttingDown, !isWorking else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "微信通知备份-\(Int(Date().timeIntervalSince1970)).sqlite"
+        panel.nameFieldStringValue = "通知档案备份-\(Int(Date().timeIntervalSince1970)).sqlite"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isWorking = true
         worker.perform {

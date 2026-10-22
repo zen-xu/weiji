@@ -162,7 +162,7 @@ extension Archive {
         return result
     }
     func imageAssociations(for message: Message) throws -> [ImageAssociation] {
-        guard hasImageCatalog, message.deliveredAt != nil,
+        guard message.notificationPlatform == .wechat, hasImageCatalog, message.deliveredAt != nil,
             let scope = message.mediaDirectoryID, ImageAssociations.validScope(scope),
             let root = try database.rows("SELECT value FROM metadata WHERE key='image_root'").first?.string("value")
         else { return [] }

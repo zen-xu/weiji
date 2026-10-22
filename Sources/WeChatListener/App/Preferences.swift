@@ -7,6 +7,7 @@ struct Preferences: Codable {
     var mcpPort: UInt16?
     var onboardingCompleted: Bool?
     var reminderSound: Bool?
+    var agentReminderRequiresToken: Bool?
     static func load(_ paths: AppPaths) -> Preferences {
         (try? JSONDecoder().decode(Self.self, from: Data(contentsOf: paths.preferences))) ?? Self()
     }

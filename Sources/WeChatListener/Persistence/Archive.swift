@@ -215,6 +215,10 @@ final class Archive {
     private func whereClause(_ filter: MessageFilter) -> (String, [SQLValue]) {
         var clauses = ["1=1"]
         var args = [SQLValue]()
+        if let platform = filter.platform {
+            clauses.append("lower(json_extract(CAST(payload AS TEXT), '$.app_bundle_id'))=?")
+            args.append(.text(platform.bundleID))
+        }
         if let conversation = filter.conversation {
             clauses.append("conversation_id=?")
             args.append(.text(conversation))
@@ -260,22 +264,27 @@ final class Archive {
         ) WHERE (?='' OR instr(lower(m.name),lower(?))>0)
         """
 
-    func conversationCount(query: String = "") throws -> Int {
-        if query.isEmpty {
+    func conversationCount(query: String = "", platform: NotificationPlatform? = nil) throws -> Int {
+        if query.isEmpty && platform == nil {
             return Int(
                 try database.rows("SELECT COUNT(DISTINCT conversation_id) AS n FROM messages").first?.int("n") ?? 0)
         }
         return Int(
             try database.rows(
-                "SELECT COUNT(*) AS n FROM (\(Self.conversationSelection))", [.text(query), .text(query)]
+                "SELECT COUNT(*) AS n FROM (\(Self.conversationSelection) AND (?='' OR lower(json_extract(CAST(m.payload AS TEXT), '$.app_bundle_id'))=?))",
+                [.text(query), .text(query), .text(platform?.bundleID ?? ""), .text(platform?.bundleID ?? "")]
             ).first?.int("n") ?? 0)
     }
 
-    func conversations(query: String = "", limit: Int? = nil, offset: Int = 0) throws -> [Conversation] {
+    func conversations(query: String = "", limit: Int? = nil, offset: Int = 0, platform: NotificationPlatform? = nil)
+        throws -> [Conversation]
+    {
         try database.rows(
-            Self.conversationSelection + " ORDER BY m.sort_at DESC,m.id LIMIT ? OFFSET ?",
+            Self.conversationSelection
+                + " AND (?='' OR lower(json_extract(CAST(m.payload AS TEXT), '$.app_bundle_id'))=?) ORDER BY m.sort_at DESC,m.id LIMIT ? OFFSET ?",
             [
-                .text(query), .text(query), .integer(Int64(limit.map { max(1, $0) } ?? -1)),
+                .text(query), .text(query), .text(platform?.bundleID ?? ""), .text(platform?.bundleID ?? ""),
+                .integer(Int64(limit.map { max(1, $0) } ?? -1)),
                 .integer(Int64(max(0, offset))),
             ]
         ).map {
@@ -288,12 +297,14 @@ final class Archive {
                 id: $0.string("conversation_id")!, name: $0.string("name")!, kind: $0.string("kind")!,
                 identitySource: $0.string("identity_source")!, preview: preview,
                 lastAt: $0.string("sort_at")!, count: Int($0.int("n") ?? 0),
-                inferredGroup: presentation?.isInferredGroup ?? false)
+                inferredGroup: presentation?.isInferredGroup ?? false,
+                platform: message?.notificationPlatform ?? .wechat)
         }
     }
     func messageObjects(_ messages: [Message]) throws -> [[String: Any]] {
         try messages.map { message in
             var result = try object(message) as! [String: Any]
+            result["platform"] = message.notificationPlatform?.rawValue
             result["presentation"] = try object(message.presentation)
             result["file_candidates"] = try fileCandidates(for: message)
             let images = try imageAssociations(for: message)
@@ -475,7 +486,7 @@ final class Archive {
                             subtitle: row["subtitle"] as? String ?? "", body: body,
                             delivered: (row["delivered_at"] as? String).flatMap(Dates.parse), captured: captured)
                     }
-                    guard message.schemaVersion == 1, message.appBundleID.lowercased() == "com.tencent.xinwechat",
+                    guard message.schemaVersion == 1, NotificationPlatform.platform(for: message.appBundleID) != nil,
                         message.source == "macos_notification", message.coverage == "notification_only",
                         !message.isCompleteChat, !message.includesSentMessages,
                         Dates.parse(message.capturedAt) != nil, Dates.parse(message.updatedAt) != nil,

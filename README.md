@@ -6,6 +6,8 @@
 
 原名“微信消息监听”。改名沿用既有签名证书、Bundle ID、数据目录及 MCP 配置；历史通知和设置无需迁移。新构建产物为 `dist/微迹.app`。旧版安装路径的升级说明见 [签名与升级](Documentation/Signing.md)。
 
+从 v0.6.0 起支持微信和飞书系统通知文字，会话按来源分层。飞书不处理附件，通用 MCP 接口支持按来源查询。
+
 ## 下载与版本
 
 正式版本从 **0.1.0** 开始，macOS 14+，从 v0.4.1 起仅提供 Apple Silicon（arm64）版本，之前已发布的通用包保留原样。下载见 [GitHub Releases](https://github.com/zen-xu/weiji/releases)；当前仓库私有，需要仓库访问权限。
@@ -35,7 +37,7 @@
 
 消息右键或“…”菜单可从会话、发送者及 @所有人快速预填规则。每条规则支持跨午夜安静时段和同一会话合并间隔，默认保持即时提醒。
 
-支持 **Agent 主动提醒**：agent 定时查阅通知档案并理解需求后，可调用 MCP `wechat_create_reminder` 或本机 HTTP `POST /api/reminders`，由微迹展示角落卡片并保存到提醒收件箱，无需预设匹配规则。HTTP 使用独立令牌；接口支持持久化与请求去重。入口为“API 与 Agent”，调度和判断由外部 agent 负责，详见 [调用方式与边界](Documentation/MCP.md#agent-主动提醒-http-api)。
+支持 **Agent 主动提醒**：agent 定时查阅通知档案并理解需求后，可调用 MCP `create_reminder`（兼容旧名 `wechat_create_reminder`） 或本机 HTTP `POST /api/reminders`，由微迹展示角落卡片并保存到提醒收件箱，无需预设匹配规则。HTTP 默认无需令牌，可在“API 与 Agent”按需开启验证；接口支持持久化与请求去重。入口为“API 与 Agent”，调度和判断由外部 agent 负责，详见 [调用方式与边界](Documentation/MCP.md#agent-主动提醒-http-api)。
 
 支持让 AI 通过 MCP 查看、示例测试、保存及删除规则，App 约 2 秒内同步；已有六个通知/文件工具保持只读。规则写入带版本检查，不会修改磁盘权限或开启采集。示例、MCP 参数及数据边界见 [提醒规则](Documentation/Reminders.md)。
 
