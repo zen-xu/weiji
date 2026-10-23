@@ -95,6 +95,7 @@ final class ReminderInbox: ObservableObject {
     var visibleHits: [ReminderHit] {
         entries.filter { !$0.isHandled && $0.dueAt <= Date() && ($0.snoozedUntil ?? .distantPast) <= Date() }.map(\.hit)
     }
+    var compactHits: [ReminderHit] { Array(visibleHits.suffix(3).reversed()) }
     var count: Int { entries.filter { !$0.isHandled }.count + overflow }
     var nextDue: Date? {
         entries.filter { !$0.isHandled && $0.presentedAt == nil }

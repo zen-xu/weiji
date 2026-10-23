@@ -317,3 +317,20 @@ func reminderRegexCPUClock() {
     #expect(restored.visibleHits.contains(where: { $0.id == fresh.id }))
     restored.flush()
 }
+
+@Test("Compact reminders show the newest three and refill after acknowledgement")
+@MainActor func reminderCompactPreviewLimit() {
+    let inbox = ReminderInbox()
+    let rule = ReminderRule(name: "预览", conditions: [ReminderCondition(value: "通知")])
+    let hits = (1...5).map { inboxHit(rule, id: "compact-\($0)") }
+    inbox.append(hits, rules: [rule], now: TestSupport.referenceDate)
+    #expect(inbox.compactHits.map(\.id) == [hits[4].id, hits[3].id, hits[2].id])
+    inbox.handle(hits[3].id)
+    #expect(inbox.compactHits.map(\.id) == [hits[4].id, hits[2].id, hits[1].id])
+    inbox.snooze(hits[4].id, until: Date().addingTimeInterval(300))
+    #expect(inbox.compactHits.map(\.id) == [hits[2].id, hits[1].id, hits[0].id])
+    inbox.handle(hits[2].id)
+    #expect(inbox.compactHits.count == 2)
+    inbox.handle()
+    #expect(inbox.compactHits.isEmpty)
+}
