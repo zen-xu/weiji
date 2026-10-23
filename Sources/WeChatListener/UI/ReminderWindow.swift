@@ -149,16 +149,24 @@ final class ReminderWindowController: NSObject, NSWindowDelegate {
         let visible =
             panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 1000, height: 700)
-        let preview = String((inbox.visibleHits.last?.message.body ?? "").prefix(500))
-        let textHeight = (preview as NSString).boundingRect(
-            with: NSSize(width: 352, height: 60), options: [.usesLineFragmentOrigin],
-            attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
-        ).height
-        let compactHeight = 134 + min(54, max(18, ceil(textHeight)))
+        let hits = inbox.compactHits
+        let rowsHeight = hits.reduce(CGFloat(0)) { total, hit in
+            let preview = String(hit.message.body.prefix(500))
+            let textHeight = (preview as NSString).boundingRect(
+                with: NSSize(width: 352, height: 60), options: [.usesLineFragmentOrigin],
+                attributes: [.font: NSFont.systemFont(ofSize: 13)]
+            ).height
+            return total + 54 + min(54, max(18, ceil(textHeight)))
+        }
+        let hiddenCount = max(0, inbox.visibleHits.count - hits.count)
+        let compactHeight =
+            80 + rowsHeight + CGFloat(max(0, hits.count - 1)) * 16
+            + (hiddenCount > 0 ? 24 : 0)
+        let availableHeight = max(180, visible.height - 80)
         let size =
             inbox.expanded
-            ? NSSize(width: 480, height: min(520, visible.height - 80))
-            : NSSize(width: 380, height: compactHeight)
+            ? NSSize(width: 480, height: min(520, availableHeight))
+            : NSSize(width: 380, height: min(compactHeight, availableHeight))
         panel.setContentSize(size)
         panel.setFrameOrigin(NSPoint(x: visible.maxX - panel.frame.width - 20, y: visible.minY + 20))
     }
@@ -218,9 +226,14 @@ struct ReminderPromptView: View {
                         }
                     }.padding(.horizontal, 14).padding(.vertical, 10)
                 }
-            } else if let hit = inbox.visibleHits.last {
-                message(hit, compact: true).padding(.horizontal, 14).padding(.vertical, 6)
-                Spacer(minLength: 0)
+            } else {
+                compactMessages
+                let remaining = inbox.visibleHits.count - inbox.compactHits.count
+                if remaining > 0 {
+                    Button("还有 \(remaining) 条，展开查看", action: expand)
+                        .buttonStyle(.plain).font(.caption).foregroundStyle(AppAppearance.accent)
+                        .padding(.horizontal, 14).padding(.bottom, 6)
+                }
             }
             HStack(spacing: 12) {
                 Menu("稍后") {
@@ -239,6 +252,18 @@ struct ReminderPromptView: View {
                     .strokeBorder(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
             }
             .weijiAccent().accessibilityElement(children: .contain)
+    }
+
+    private var compactMessages: some View {
+        let hits = inbox.compactHits
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(hits) { hit in
+                    message(hit, compact: true)
+                    if hit.id != hits.last?.id { Divider().padding(.vertical, 3) }
+                }
+            }.padding(.horizontal, 14).padding(.vertical, 6)
+        }.scrollBounceBehavior(.basedOnSize)
     }
 
     private func message(_ hit: ReminderHit, compact: Bool) -> some View {
